@@ -1,0 +1,12 @@
+changelog:
+  categories:
+    - title: HUB experience
+      labels: [hub, enhancement]
+    - title: Setup and distribution
+      labels: [setup, windows, release]
+    - title: Registry and ecosystem
+      labels: [catalog, setup-submission]
+    - title: Fixes
+      labels: [bug]
+    - title: Other changes
+      labels: ['*']

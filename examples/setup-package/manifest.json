@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "example-community-plugin",
+  "name": "Example Community Plugin",
+  "summary": "Minimal virtual Setup example for a DSH plugin.",
+  "version": "1.0.0",
+  "publisher": { "name": "Example Publisher", "url": "https://github.com/example" },
+  "kind": "virtual",
+  "categories": ["development"],
+  "tags": ["example", "plugin"],
+  "source": { "repository": "https://github.com/example/dsh-plugin", "ref": "v1.0.0" },
+  "license": { "identifier": "MIT", "url": "https://github.com/example/dsh-plugin/blob/main/LICENSE" },
+  "compatibility": { "dsh": ">=0.1.0", "platforms": ["windows", "linux", "macos"], "architectures": ["any"], "surfaces": ["desktop"] },
+  "trust": { "signature": "unknown", "review": "source" },
+  "requirements": { "administrator": false, "restart": "desktop", "networkHosts": ["github.com"], "externalRuntimes": [] },
+  "install": { "mode": "dsh-cli", "profile": "desktop", "command": "dsh plugin --profile web add github:example/dsh-plugin#v1.0.0", "rollback": "Remove the package from HUB inventory and restart Desktop." }
+}

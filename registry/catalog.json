@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-17T00:00:00.000Z",
+  "channel": "preview",
+  "entries": [
+    {
+      "schemaVersion": 1,
+      "id": "deepseek-harness-desktop-full",
+      "name": "DeepSeek Harness Desktop — Full Setup",
+      "summary": "Offline-first Windows installer with Desktop, HUB, CONFIG, private Node.js Runtime, and WebView2 recovery.",
+      "version": "0.1.0-rc.5",
+      "publisher": { "name": "DeepSeek Harness HUB contributors", "url": "https://github.com/Iraryi/deepseek-harness-hub" },
+      "kind": "standalone",
+      "categories": ["desktop", "runtime", "first-party"],
+      "tags": ["windows", "offline", "webview2", "recommended"],
+      "featured": true,
+      "source": { "repository": "https://github.com/Iraryi/deepseek-harness-desktop", "ref": "v0.1.0-rc.5" },
+      "license": { "identifier": "MIT", "url": "https://github.com/Iraryi/deepseek-harness-desktop/blob/master/LICENSE" },
+      "compatibility": { "dsh": "0.1.0-rc.5", "platforms": ["windows"], "architectures": ["x64"], "surfaces": ["both"] },
+      "trust": { "signature": "unsigned", "review": "lifecycle", "reviewedAt": "2026-08-17T00:00:00.000Z" },
+      "requirements": { "administrator": true, "restart": "none", "networkHosts": [], "externalRuntimes": [] },
+      "install": { "mode": "release-asset", "profile": "both", "rollback": "Use Windows Installed apps to uninstall; user-created data is preserved." },
+      "artifacts": [{ "name": "DeepSeek-Harness-Setup-Full-0.1.0-rc.5-win-x64.exe", "url": "https://github.com/Iraryi/deepseek-harness-hub/releases/download/v0.1.0-rc.5/DeepSeek-Harness-Setup-Full-0.1.0-rc.5-win-x64.exe", "bytes": 332921731, "sha256": "c56fb7312b03acf12b46b0d3189aa2b32c51024b7c59bffbf443502fbf5bdf87" }]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "deepseek-harness-desktop-lite",
+      "name": "DeepSeek Harness Desktop — Lite Setup",
+      "summary": "Small Windows installer that downloads a verified Runtime or imports a manually downloaded Runtime ZIP.",
+      "version": "0.1.0-rc.5",
+      "publisher": { "name": "DeepSeek Harness HUB contributors", "url": "https://github.com/Iraryi/deepseek-harness-hub" },
+      "kind": "standalone",
+      "categories": ["desktop", "runtime", "first-party"],
+      "tags": ["windows", "online", "manual-import"],
+      "featured": true,
+      "source": { "repository": "https://github.com/Iraryi/deepseek-harness-desktop", "ref": "v0.1.0-rc.5" },
+      "license": { "identifier": "MIT", "url": "https://github.com/Iraryi/deepseek-harness-desktop/blob/master/LICENSE" },
+      "compatibility": { "dsh": "0.1.0-rc.5", "platforms": ["windows"], "architectures": ["x64"], "surfaces": ["both"] },
+      "trust": { "signature": "unsigned", "review": "lifecycle", "reviewedAt": "2026-08-17T00:00:00.000Z" },
+      "requirements": { "administrator": true, "restart": "none", "networkHosts": ["github.com", "objects.githubusercontent.com"], "externalRuntimes": [] },
+      "install": { "mode": "release-asset", "profile": "both", "rollback": "Use Windows Installed apps to uninstall; user-created data is preserved." },
+      "artifacts": [{ "name": "DeepSeek-Harness-Setup-Lite-0.1.0-rc.5-win-x64.exe", "url": "https://github.com/Iraryi/deepseek-harness-hub/releases/download/v0.1.0-rc.5/DeepSeek-Harness-Setup-Lite-0.1.0-rc.5-win-x64.exe", "bytes": 4208718, "sha256": "c2e44ed04e0fbb17b67e1d7d1507cf552abd15488af0d79df7409d1ac4e36f53" }]
+    },
+    {
+      "schemaVersion": 1,
+      "id": "deepseek-harness-full-capability-pack",
+      "name": "DeepSeek Harness Full Capability Pack",
+      "summary": "First-party virtual Setup for the complete model, API, usage, skill, workflow, tool, and desktop-oriented capability profile.",
+      "version": "0.1.0-rc.5",
+      "publisher": { "name": "DeepSeek Harness HUB contributors", "url": "https://github.com/Iraryi/deepseek-harness-hub" },
+      "kind": "virtual",
+      "categories": ["capability-pack", "first-party"],
+      "tags": ["models", "api", "usage", "skills", "tools"],
+      "featured": true,
+      "source": { "repository": "https://github.com/Iraryi/deepseek-harness-desktop", "ref": "v0.1.0-rc.5" },
+      "license": { "identifier": "MIT", "url": "https://github.com/Iraryi/deepseek-harness-desktop/blob/master/LICENSE" },
+      "compatibility": { "dsh": "0.1.0-rc.5", "platforms": ["windows", "linux", "macos"], "architectures": ["any"], "surfaces": ["desktop"] },
+      "trust": { "signature": "unknown", "review": "install", "reviewedAt": "2026-08-17T00:00:00.000Z" },
+      "requirements": { "administrator": false, "restart": "desktop", "networkHosts": [], "externalRuntimes": [] },
+      "install": { "mode": "dsh-cli", "profile": "desktop", "command": "dsh setup install deepseek-harness-full-capability-pack", "rollback": "Remove the component from HUB inventory and restart Desktop." }
+    }
+  ]
+}

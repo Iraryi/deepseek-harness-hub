@@ -1,0 +1,13 @@
+{
+  "name": "deepseek-harness-hub-registry",
+  "version": "0.1.0-rc.5",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "validate": "node scripts/validate-catalog.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,46 @@
+name: Setup submission
+description: Propose a virtual Setup recipe or vetted standalone Setup package.
+title: "[Setup]: "
+labels: [setup-submission, needs-review]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Package kind
+      options: [Virtual Setup, Standalone Setup EXE]
+    validations:
+      required: true
+  - type: input
+    id: repository
+    attributes:
+      label: Canonical source repository
+      placeholder: https://github.com/owner/repository
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: License
+      placeholder: MIT
+    validations:
+      required: true
+  - type: textarea
+    id: install
+    attributes:
+      label: Official installation reference
+      description: Link and quote the upstream-supported method; do not guess a command.
+    validations:
+      required: true
+  - type: textarea
+    id: privileges
+    attributes:
+      label: Privileges, network, dependencies, and restart
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Test evidence
+      description: Include clean-profile install, launch, update/repair, uninstall, and residue results where applicable.
+    validations:
+      required: true

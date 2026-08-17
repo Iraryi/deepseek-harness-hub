@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Upstream DeepSeek Harness
+    url: https://github.com/deepseek-ai/deepseek-harness/issues
+    about: Report core DSH issues unrelated to the Windows desktop distribution.
