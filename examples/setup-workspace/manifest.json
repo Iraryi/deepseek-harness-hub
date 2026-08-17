@@ -1,0 +1,87 @@
+{
+  "$schema": "../../registry/schema/setup-workspace.schema.json",
+  "schemaVersion": 1,
+  "id": "example-custom-sidebar-workspace",
+  "name": "Example Custom Sidebar Workspace",
+  "version": "1.0.0",
+  "summary": "A source-pinned Desktop component with editable options and an isolated receipt.",
+  "publisher": {
+    "name": "Example Publisher",
+    "url": "https://github.com/example"
+  },
+  "source": {
+    "kind": "git",
+    "repository": "https://github.com/example/dsh-sidebar",
+    "ref": "0123456789abcdef0123456789abcdef01234567",
+    "subdirectory": "packages/sidebar"
+  },
+  "targets": ["desktop"],
+  "dependencies": [
+    {
+      "id": "private-node",
+      "kind": "runtime",
+      "version": ">=20",
+      "required": true,
+      "source": "bundled"
+    }
+  ],
+  "environment": {
+    "DSH_PROFILE": "desktop",
+    "NODE_ENV": "production"
+  },
+  "components": [
+    {
+      "id": "sidebar-ui",
+      "name": "Sidebar UI",
+      "description": "Installs only into the Desktop Web Profile unless the author explicitly adds a HUB target.",
+      "scope": "desktop",
+      "defaultEnabled": true,
+      "paths": ["dist/sidebar"],
+      "options": [
+        {
+          "id": "compact-mode",
+          "label": "Compact mode",
+          "type": "boolean",
+          "default": false
+        },
+        {
+          "id": "accent",
+          "label": "Accent",
+          "type": "choice",
+          "default": "violet",
+          "choices": ["violet", "blue", "system"]
+        }
+      ]
+    }
+  ],
+  "build": {
+    "workingDirectory": "packages/sidebar",
+    "commands": [
+      "pnpm install --frozen-lockfile",
+      "pnpm build"
+    ],
+    "patches": ["workspace/patches/desktop-profile.patch"],
+    "overlays": ["workspace/overlays/defaults"],
+    "outputs": ["dist/sidebar"]
+  },
+  "hooks": {
+    "preflight": ["dsh workspace preflight"],
+    "install": ["dsh workspace apply"],
+    "verify": ["dsh workspace verify"],
+    "uninstall": ["dsh workspace remove"]
+  },
+  "receipts": {
+    "root": "${DSH_DATA}/hub/receipts/example-custom-sidebar-workspace",
+    "files": ["manifest.json", "installed-files.json", "options.json"],
+    "directories": ["${DSH_PROFILE}/bundles/example-custom-sidebar-workspace"],
+    "rollback": "Restore the previous bundle layer, remove generated files, and restart Desktop.",
+    "restart": "desktop"
+  },
+  "declarations": {
+    "license": "MIT",
+    "signature": "unknown",
+    "administrator": false,
+    "networkHosts": ["github.com"],
+    "writesOutsideProfile": false
+  }
+}

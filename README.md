@@ -79,6 +79,8 @@ Read the full [architecture guide](docs/architecture.md) and [desktop distributi
 .
 ├─ registry/                 Public first-party Setup catalog and JSON Schema
 ├─ examples/setup-package/   Minimal authoring example
+├─ examples/setup-workspace/ Editable source/build/component workspace example
+├─ snapshots/                Full-screen bilingual development snapshots
 ├─ docs/                     Architecture, catalog, release, and package specifications
 ├─ scripts/                  Dependency-free repository validation
 └─ .github/                  CI, issue forms, pull request policy, and release notes config
@@ -90,6 +92,7 @@ The desktop implementation lives in [`Iraryi/deepseek-harness-desktop`](https://
 
 1. Read the [Setup package specification](docs/setup-package-spec.md).
 2. Start from [`examples/setup-package/manifest.json`](examples/setup-package/manifest.json).
+   For editable local or AI-assisted builds, also read [Custom Setup Workspaces](docs/custom-workspaces.md) and start from [`examples/setup-workspace/manifest.json`](examples/setup-workspace/manifest.json).
 3. Run `npm run validate` locally.
 4. Open a **Setup submission** issue with installation evidence.
 5. Submit a pull request after the package has stable install and uninstall behavior.

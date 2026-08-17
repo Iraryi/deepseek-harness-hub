@@ -72,6 +72,8 @@ flowchart LR
 .
 ├─ registry/                 第一方 Setup 目录与 JSON Schema
 ├─ examples/setup-package/   最小构建示例
+├─ examples/setup-workspace/ 可编辑的源码、构建与组件工作区示例
+├─ snapshots/                中英文全屏开发快照
 ├─ docs/                     架构、目录、发布和包规范
 ├─ scripts/                  零依赖仓库校验
 └─ .github/                  CI、Issue 表单、PR 与 Release 规则
@@ -83,6 +85,7 @@ flowchart LR
 
 1. 阅读 [Setup 包规范](docs/setup-package-spec.md)。
 2. 从 [`examples/setup-package/manifest.json`](examples/setup-package/manifest.json) 开始。
+   如果需要本地或 AI 辅助编辑构建，继续阅读 [Custom Setup Workspaces](docs/custom-workspaces.md)，并从 [`examples/setup-workspace/manifest.json`](examples/setup-workspace/manifest.json) 开始。
 3. 本地执行 `npm run validate`。
 4. 创建 **Setup submission** Issue 并附安装证据。
 5. 安装与卸载行为稳定后提交 PR。
