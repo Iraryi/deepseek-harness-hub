@@ -5,3 +5,14 @@ Thumbs.db
 dist/
 tmp/
 *.user.json
+
+# The implementation snapshot is source-only. Generated launchers and local
+# build outputs stay outside the public HUB source tree.
+/implementation/dsh.exe
+/implementation/dsh-config.exe
+/implementation/Microsoft.Web.WebView2.Core.dll
+/implementation/Microsoft.Web.WebView2.WinForms.dll
+/implementation/WebView2Loader.dll
+/implementation/portable.mode
+/implementation/**/dist*/
+/implementation/**/node_modules/

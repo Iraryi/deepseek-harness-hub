@@ -25,7 +25,7 @@
 | --- | --- | --- |
 | **HUB 程序** | 原生桌面市场与组件管理器 | 汇总 DSHMK、精选源、GitHub、STAR、本地包、已安装组件、更新、修复和重启流程 |
 | **Setup Registry** | 统一的 Setup 式安装页面 | 安装前展示来源、许可、发布者、证书/签名状态、权限、联网行为、安装证据、选项、回滚和兼容性 |
-| **Desktop 发行层** | Full/Lite Setup、Runtime、Portable | 提供 Windows WebView2 宿主、CONFIG、私有 Node.js、离线修复和独立 HUB 进程 |
+| **HUB 发行层** | HUB Setup、HUB Runtime、开发构建 | 提供独立 Windows WebView2 宿主、HUB CONFIG、私有 Node.js 与离线修复 |
 
 HUB **不会**宣称任意 GitHub 源码都能直接变成可靠 EXE。在线项目会以可检查配方驱动的**虚拟 Setup 界面**呈现；独立 Setup EXE 属于经过验证的精选库，至少要通过安装、启动、更新和卸载回归。
 
@@ -70,6 +70,7 @@ flowchart LR
 
 ```text
 .
+├─ implementation/           HUB 应用、Web UI、原生宿主与 Runtime 的完整可构建源码
 ├─ registry/                 第一方 Setup 目录与 JSON Schema
 ├─ examples/setup-package/   最小构建示例
 ├─ examples/setup-workspace/ 可编辑的源码、构建与组件工作区示例
@@ -79,7 +80,15 @@ flowchart LR
 └─ .github/                  CI、Issue 表单、PR 与 Release 规则
 ```
 
-桌面实现源码位于 [`Iraryi/deepseek-harness-desktop`](https://github.com/Iraryi/deepseek-harness-desktop)。旧仓库继续作为 Windows 源码、原生宿主和发行构建层；本仓库则是面向用户的 HUB、目录契约、发布中心和下载入口。
+HUB 的实现源码直接位于本仓库的 [`implementation/`](implementation/) 中，不再借用 Desktop 仓库充当源码位置。该目录保留完整 DSH 构建上下文，以便持续构建 HUB；HUB 专属入口、Web UI、Setup 协议、目录适配器和安装桥接的准确位置见[源码地图](docs/source-layout.md)。`deepseek-harness-desktop` 是独立的 Desktop 发行项目，不再作为 HUB 的源码仓库或发布中心。
+
+## 从源码构建 HUB
+
+```powershell
+npm run build:hub
+```
+
+构建脚本会检查 Node.js、pnpm 和 WebView2 SDK 等前置条件，并把结果写入仓库根目录的 `dist/`。开发者也可以进入 `implementation/` 使用原有 pnpm 工作区命令修改 Web UI、原生宿主、目录同步或 Setup 引擎。
 
 ## 发布一个 Setup
 

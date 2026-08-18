@@ -1,0 +1,13 @@
+# Optional, user-installed defaults layered after the standard Web bundle.
+# The standard preset already carries the complete tool, skill, compaction,
+# delegation, workflow, goal, and Web-search composition. This layer selects
+# it for new sessions and enables durable full-text search on first use.
+
+- id: agent-presets
+  config:
+    default: standard
+
+- id: session-query-sqlite
+  config:
+    path: !!js dshHomePath('session-search.sqlite')
+    openAt: first-search

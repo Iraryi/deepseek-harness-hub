@@ -1,0 +1,25 @@
+DSH HUB community discovery
+===========================
+
+dsh-market
+----------
+The community-market information architecture and installation safeguards were
+informed by dsh-market, Copyright (c) 2026 fkysly and dsh-market contributors.
+dsh-market is distributed under the MIT License.
+
+awesome-dsh-plugin
+------------------
+The bundled community-registry.json snapshot is derived from
+https://github.com/awesome-dsh-plugin/awesome-dsh-plugin and is made available
+under CC0-1.0. The live catalog remains maintained by its upstream contributors.
+
+DSHMK / dsh-plugins-store
+-------------------------
+The bundled dshmk-catalog.json snapshot is derived from the public DSHMK
+catalog and the dsh-plugins-store project maintained by ZASENJC and its
+contributors. The dsh-plugins-store source is distributed under the MIT
+License. Live metadata, validation results, and installation references remain
+maintained by their upstream contributors.
+
+DSH HUB independently validates registry identity, source provenance, immutable
+versions, download hosts, hashes, licenses, permissions, and install behavior.

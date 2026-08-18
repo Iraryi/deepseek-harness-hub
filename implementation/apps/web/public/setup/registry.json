@@ -1,0 +1,284 @@
+{
+    "schemaVersion":  1,
+    "generatedAt":  "2026-08-15T22:20:17.4831834+00:00",
+    "source":  "https://github.com/Iraryi/deepseek-harness-setups",
+    "entries":  [
+                    {
+                        "manifest":  {
+                                         "schemaVersion":  1,
+                                         "id":  "dsh-full-capability-pack",
+                                         "name":  {
+                                                      "default":  "DSH Full Capability Pack",
+                                                      "zh":  "DSH 完整能力包",
+                                                      "en":  "DSH Full Capability Pack"
+                                                  },
+                                         "description":  {
+                                                             "default":  "Enables the complete standard preset and durable on-demand session search.",
+                                                             "zh":  "启用完整标准预设和按需持久化会话搜索。",
+                                                             "en":  "Enables the complete standard preset and durable on-demand session search."
+                                                         },
+                                         "version":  "0.1.0-rc.5",
+                                         "kind":  "virtual",
+                                         "categories":  [
+                                                            "official",
+                                                            "capability-pack"
+                                                        ],
+                                         "tags":  [
+                                                      "third-party-api",
+                                                      "usage-statistics",
+                                                      "skills",
+                                                      "tools",
+                                                      "search",
+                                                      "standard-preset"
+                                                  ],
+                                         "source":  {
+                                                        "repository":  "https://github.com/Iraryi/deepseek-harness-desktop",
+                                                        "ref":  "master",
+                                                        "commit":  "b13001bcf95bf739b552be4a10a4da50b24ff779"
+                                                    },
+                                         "compatibility":  {
+                                                               "dsh":  "\u003e=0.1.0-rc.5 \u003c0.2.0",
+                                                               "surfaces":  [
+                                                                                "web",
+                                                                                "desktop"
+                                                                            ],
+                                                               "node":  "^22.19.0 || \u003e=24.0.0",
+                                                               "platforms":  [
+                                                                                 "any"
+                                                                             ]
+                                                           },
+                                         "license":  {
+                                                         "identifier":  "MIT",
+                                                         "name":  "MIT License",
+                                                         "url":  "https://github.com/Iraryi/deepseek-harness-desktop/blob/master/LICENSE",
+                                                         "redistributable":  true
+                                                     },
+                                         "signature":  {
+                                                           "status":  "unknown",
+                                                           "type":  "other",
+                                                           "signer":  "Unsigned development Setup; release signing is required before certification"
+                                                       },
+                                         "audit":  {
+                                                       "status":  "reviewed",
+                                                       "auditor":  "DeepSeek Harness Desktop project",
+                                                       "checkedAt":  "2026-08-15T00:00:00.000Z",
+                                                       "checks":  [
+                                                                      "manifest",
+                                                                      "in-box resolution",
+                                                                      "profile composition"
+                                                                  ]
+                                                   },
+                                         "artifacts":  [
+                                                           {
+                                                               "id":  "in-box-bundle",
+                                                               "kind":  "in-box",
+                                                               "component":  "@deepseek-ai/dsh-full-capability-pack",
+                                                               "platform":  "any"
+                                                           }
+                                                       ],
+                                         "install":  {
+                                                         "mode":  "profile",
+                                                         "source":  "in-box",
+                                                         "bundle":  "@deepseek-ai/dsh-full-capability-pack",
+                                                         "profile":  "web"
+                                                     },
+                                         "permissions":  [
+                                                             "modify the selected DSH profile",
+                                                             "write the session-search database under DSH_HOME"
+                                                         ],
+                                         "network":  [
+
+                                                     ]
+                                     },
+                        "metrics":  {
+                                        "installs":  0,
+                                        "updatedAt":  "2026-08-15T00:00:00.000Z"
+                                    }
+                    },
+                    {
+                        "manifest":  {
+                                         "schemaVersion":  1,
+                                         "id":  "cakeni-harness-pet",
+                                         "name":  {
+                                                      "default":  "harness-pet",
+                                                      "zh":  "Harness Pet 桌面宠物",
+                                                      "en":  "Harness Pet"
+                                                  },
+                                         "description":  {
+                                                             "default":  "Harness Pet — an unofficial community pet for DeepSeek Harness. Not affiliated with, endorsed by, or maintained by DeepSeek.",
+                                                             "zh":  "面向 DeepSeek Harness 的非官方社区桌面宠物；与 DeepSeek 无隶属、认可或维护关系。",
+                                                             "en":  "An unofficial community desktop pet for DeepSeek Harness; not affiliated with, endorsed by, or maintained by DeepSeek."
+                                                         },
+                                         "version":  "0.1.0",
+                                         "kind":  "virtual",
+                                         "categories":  [
+                                                            "community",
+                                                            "appearance"
+                                                        ],
+                                         "tags":  [
+                                                      "pet",
+                                                      "desktop",
+                                                      "github-source"
+                                                  ],
+                                         "source":  {
+                                                        "repository":  "https://github.com/cakeni/harness-pet",
+                                                        "ref":  "main",
+                                                        "commit":  "29bb8f0fbba5514b83300a103e2a1088a02b433a"
+                                                    },
+                                         "compatibility":  {
+                                                               "dsh":  "\u003e=0.1.0-rc.5 \u003c0.2.0",
+                                                               "surfaces":  [
+                                                                                "web",
+                                                                                "desktop"
+                                                                            ],
+                                                               "platforms":  [
+                                                                                 "any"
+                                                                             ]
+                                                           },
+                                         "license":  {
+                                                         "identifier":  "MIT",
+                                                         "name":  "MIT License",
+                                                         "url":  "https://github.com/cakeni/harness-pet/blob/29bb8f0fbba5514b83300a103e2a1088a02b433a/LICENSE",
+                                                         "redistributable":  true
+                                                     },
+                                         "signature":  {
+                                                           "status":  "unsigned"
+                                                       },
+                                         "audit":  {
+                                                       "status":  "unreviewed",
+                                                       "auditor":  "Automated GitHub discovery",
+                                                       "checkedAt":  "2026-08-15T22:19:18.8138370+00:00",
+                                                       "checks":  [
+                                                                      "GitHub metadata",
+                                                                      "default branch pinned",
+                                                                      "codeload SHA-256",
+                                                                      "root package manifest",
+                                                                      "archive installation with lifecycle scripts disabled"
+                                                                  ]
+                                                   },
+                                         "artifacts":  [
+                                                           {
+                                                               "id":  "source-archive",
+                                                               "kind":  "archive",
+                                                               "url":  "https://codeload.github.com/cakeni/harness-pet/tar.gz/29bb8f0fbba5514b83300a103e2a1088a02b433a",
+                                                               "sha256":  "e9ce666832c6c3f2a6089a2fffd0062466eb1f79a70879952e68164c0bcbb6ac",
+                                                               "fileName":  "cakeni-harness-pet-29bb8f0fbba5.tgz",
+                                                               "bytes":  1901107,
+                                                               "platform":  "any"
+                                                           }
+                                                       ],
+                                         "install":  {
+                                                         "mode":  "profile",
+                                                         "source":  "package",
+                                                         "artifactId":  "source-archive",
+                                                         "profile":  "web"
+                                                     },
+                                         "permissions":  [
+                                                             "modify the selected DSH profile",
+                                                             "install-scripts"
+                                                         ],
+                                         "network":  [
+                                                         "GitHub artifact download",
+                                                         "runtime network behavior not yet audited"
+                                                     ]
+                                     },
+                        "metrics":  {
+                                        "stars":  5,
+                                        "installs":  0,
+                                        "updatedAt":  "2026-08-15T13:50:35Z"
+                                    }
+                    },
+                    {
+                        "manifest":  {
+                                         "schemaVersion":  1,
+                                         "id":  "yuuu0109-dsh-cache-hit-decimal",
+                                         "name":  {
+                                                      "default":  "@yuuu0109/dsh-cache-hit-decimal",
+                                                      "zh":  "缓存命中率双小数显示",
+                                                      "en":  "Two-decimal cache-hit rate"
+                                                  },
+                                         "description":  {
+                                                             "default":  "Two-decimal cache-hit rate for the DeepSeek Harness Web GUI",
+                                                             "zh":  "在 DeepSeek Harness Web 界面中显示两位小数的缓存命中率。",
+                                                             "en":  "Shows a two-decimal cache-hit rate in the DeepSeek Harness Web UI."
+                                                         },
+                                         "version":  "0.1.4",
+                                         "kind":  "virtual",
+                                         "categories":  [
+                                                            "community",
+                                                            "interface"
+                                                        ],
+                                         "tags":  [
+                                                      "cache",
+                                                      "statistics",
+                                                      "github-source"
+                                                  ],
+                                         "source":  {
+                                                        "repository":  "https://github.com/Yuuu0109/dsh-cache-hit-decimal",
+                                                        "ref":  "main",
+                                                        "commit":  "bf4bfe5a00a485e0ba37c0203f618a2dcda33ecd"
+                                                    },
+                                         "compatibility":  {
+                                                               "dsh":  "\u003e=0.1.0-rc.5 \u003c0.2.0",
+                                                               "surfaces":  [
+                                                                                "web",
+                                                                                "desktop"
+                                                                            ],
+                                                               "platforms":  [
+                                                                                 "any"
+                                                                             ]
+                                                           },
+                                         "license":  {
+                                                         "identifier":  "MIT",
+                                                         "name":  "MIT License",
+                                                         "url":  "https://github.com/Yuuu0109/dsh-cache-hit-decimal/blob/bf4bfe5a00a485e0ba37c0203f618a2dcda33ecd/LICENSE",
+                                                         "redistributable":  true
+                                                     },
+                                         "signature":  {
+                                                           "status":  "unsigned"
+                                                       },
+                                         "audit":  {
+                                                       "status":  "unreviewed",
+                                                       "auditor":  "Automated GitHub discovery",
+                                                       "checkedAt":  "2026-08-15T22:19:08.7146962+00:00",
+                                                       "checks":  [
+                                                                      "GitHub metadata",
+                                                                      "default branch pinned",
+                                                                      "codeload SHA-256",
+                                                                      "root package manifest",
+                                                                      "archive installation with lifecycle scripts disabled"
+                                                                  ]
+                                                   },
+                                         "artifacts":  [
+                                                           {
+                                                               "id":  "source-archive",
+                                                               "kind":  "archive",
+                                                               "url":  "https://codeload.github.com/Yuuu0109/dsh-cache-hit-decimal/tar.gz/bf4bfe5a00a485e0ba37c0203f618a2dcda33ecd",
+                                                               "sha256":  "9ac1dc2afd6013b0e6d9e7a93b61af740f4d693df0b725e73ac2b88e8417ddb2",
+                                                               "fileName":  "yuuu0109-dsh-cache-hit-decimal-bf4bfe5a00a4.tgz",
+                                                               "bytes":  54532,
+                                                               "platform":  "any"
+                                                           }
+                                                       ],
+                                         "install":  {
+                                                         "mode":  "profile",
+                                                         "source":  "package",
+                                                         "artifactId":  "source-archive",
+                                                         "profile":  "web"
+                                                     },
+                                         "permissions":  [
+                                                             "modify the selected DSH profile"
+                                                         ],
+                                         "network":  [
+                                                         "GitHub artifact download",
+                                                         "runtime network behavior not yet audited"
+                                                     ]
+                                     },
+                        "metrics":  {
+                                        "stars":  0,
+                                        "installs":  0,
+                                        "updatedAt":  "2026-08-15T14:27:00Z"
+                                    }
+                    }
+                ]
+}

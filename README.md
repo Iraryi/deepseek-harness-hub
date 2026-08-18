@@ -32,7 +32,7 @@
 | --- | --- | --- |
 | **HUB application** | A native desktop marketplace and component manager | Aggregates DSHMK, curated sources, GitHub discovery, starred projects, local packages, installed components, updates, repair, and restart workflows |
 | **Setup registry** | Consistent Setup-style installation pages | Describes source, license, publisher, certificate/signature state, permissions, network use, install evidence, options, rollback, and compatibility before installation |
-| **Desktop distribution** | Full Setup, Lite Setup, Runtime, and Portable packages | Provides the Windows WebView2 host, CONFIG, private Node.js runtime, offline recovery, and a separate HUB process |
+| **HUB distribution** | HUB Setup, HUB Runtime, and developer builds | Provides the independent Windows WebView2 host, HUB CONFIG, private Node.js runtime, and offline recovery |
 
 The HUB does **not** claim that arbitrary GitHub source can safely become an EXE. Online entries are rendered as **virtual Setup experiences** backed by inspectable recipes. Standalone Setup EXEs belong to the curated library and are accepted only after repeatable installation, launch, update, and uninstall checks.
 
@@ -77,6 +77,7 @@ Read the full [architecture guide](docs/architecture.md) and [desktop distributi
 
 ```text
 .
+├─ implementation/           Complete buildable HUB application, Web UI, native host, and Runtime source
 ├─ registry/                 Public first-party Setup catalog and JSON Schema
 ├─ examples/setup-package/   Minimal authoring example
 ├─ examples/setup-workspace/ Editable source/build/component workspace example
@@ -86,7 +87,15 @@ Read the full [architecture guide](docs/architecture.md) and [desktop distributi
 └─ .github/                  CI, issue forms, pull request policy, and release notes config
 ```
 
-The desktop implementation lives in [`Iraryi/deepseek-harness-desktop`](https://github.com/Iraryi/deepseek-harness-desktop). That repository is the Windows source/distribution layer; this repository is the user-facing HUB, catalog contract, publishing center, and release channel.
+The HUB implementation now lives directly in this repository under [`implementation/`](implementation/). It no longer delegates its source location to the Desktop repository. The directory retains the complete DSH build context needed to build the HUB without relying on unpublished packages. See the [source map](docs/source-layout.md) for the exact HUB native entry point, Web UI, Setup protocol, catalog adapters, and installation bridge locations. `deepseek-harness-desktop` is a separate Desktop distribution and is no longer the HUB source or release center.
+
+## Build HUB from source
+
+```powershell
+npm run build:hub
+```
+
+The build entry checks Node.js, pnpm, and WebView2 SDK prerequisites and writes results to the repository-level `dist/` directory. Contributors can also work directly inside `implementation/` with the original pnpm workspace commands.
 
 ## Publish a Setup
 
