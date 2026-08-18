@@ -11,5 +11,5 @@
 
 - Establish the DeepSeek Harness HUB publishing and ecosystem repository.
 - Publish Registry v1, a Setup package schema, authoring example, and validator.
-- Reclassify `deepseek-harness-desktop` as the Windows implementation and distribution layer.
+- Keep `deepseek-harness-desktop` as a separate Desktop product rather than treating it as the HUB implementation layer.
 - Publish Full Setup, Lite Setup, Runtime, Portable, release manifest, and checksums through HUB Releases.

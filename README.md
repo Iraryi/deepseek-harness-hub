@@ -12,7 +12,7 @@
 <p align="center">
   <a href="README.zh-CN.md">简体中文</a> ·
   <a href="https://github.com/Iraryi/deepseek-harness-hub/releases">Downloads</a> ·
-  <a href="docs/setup-package-spec.md">Setup specification</a> ·
+  <a href="docs/hub/setup-package-spec.md">Setup specification</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -77,7 +77,9 @@ Read the full [architecture guide](docs/architecture.md) and [desktop distributi
 
 ```text
 .
-├─ implementation/           Complete buildable HUB application, Web UI, native host, and Runtime source
+├─ apps/                     DSH command and application entry points
+├─ packages/                 HUB Web UI, Setup protocol, registry, and shared DSH packages
+├─ windows/                  Native HUB host, Runtime, Setup builder, and release assembly
 ├─ registry/                 Public first-party Setup catalog and JSON Schema
 ├─ examples/setup-package/   Minimal authoring example
 ├─ examples/setup-workspace/ Editable source/build/component workspace example
@@ -87,7 +89,7 @@ Read the full [architecture guide](docs/architecture.md) and [desktop distributi
 └─ .github/                  CI, issue forms, pull request policy, and release notes config
 ```
 
-The HUB implementation now lives directly in this repository under [`implementation/`](implementation/). It no longer delegates its source location to the Desktop repository. The directory retains the complete DSH build context needed to build the HUB without relying on unpublished packages. See the [source map](docs/source-layout.md) for the exact HUB native entry point, Web UI, Setup protocol, catalog adapters, and installation bridge locations. `deepseek-harness-desktop` is a separate Desktop distribution and is no longer the HUB source or release center.
+The HUB implementation is the root project in this repository. The native host, Runtime, Setup builder, Web UI, Setup protocol, catalog adapters, tests, and all shared DSH packages are directly editable here. See the [source map](docs/hub/source-layout.md) for the exact customization points. `deepseek-harness-desktop` is a separate Desktop distribution and is not the HUB source or release center.
 
 ## Build HUB from source
 
@@ -95,13 +97,13 @@ The HUB implementation now lives directly in this repository under [`implementat
 npm run build:hub
 ```
 
-The build entry checks Node.js, pnpm, and WebView2 SDK prerequisites and writes results to the repository-level `dist/` directory. Contributors can also work directly inside `implementation/` with the original pnpm workspace commands.
+The build entry checks Node.js, pnpm, and WebView2 SDK prerequisites and writes results to the repository-level `dist/` directory. Contributors can work directly in the root pnpm workspace and modify the native host, Runtime, Setup builder, or Web UI without crossing into another repository.
 
 ## Publish a Setup
 
-1. Read the [Setup package specification](docs/setup-package-spec.md).
+1. Read the [Setup package specification](docs/hub/setup-package-spec.md).
 2. Start from [`examples/setup-package/manifest.json`](examples/setup-package/manifest.json).
-   For editable local or AI-assisted builds, also read [Custom Setup Workspaces](docs/custom-workspaces.md) and start from [`examples/setup-workspace/manifest.json`](examples/setup-workspace/manifest.json).
+   For editable local or AI-assisted builds, also read [Custom Setup Workspaces](docs/hub/custom-workspaces.md) and start from [`examples/setup-workspace/manifest.json`](examples/setup-workspace/manifest.json).
 3. Run `npm run validate` locally.
 4. Open a **Setup submission** issue with installation evidence.
 5. Submit a pull request after the package has stable install and uninstall behavior.

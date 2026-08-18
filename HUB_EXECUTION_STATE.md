@@ -275,3 +275,11 @@ Result: complete. The Runtime build, Runtime smoke, isolated installed-directory
 - The post-close handoff uses Windows Shell/Explorer so the new Desktop or HUB process is not attached to CONFIG's parent Job. The regular `Save` button remains save-and-close only.
 - `windows/launcher/smoke-first-run-handoff.ps1` now asserts that the Desktop process is absent immediately after `SaveAndClose(true)`, then launches it only after the form is disposed, verifies survival outside the outer Job, and checks for no access-denied startup.
 - Launcher build and the updated first-run handoff smoke pass at `windows/launcher/dist-save-then-launch-20260818`. Full/Lite Setup compilation and the local Setup smoke pass at `windows/setup/dist-save-then-launch-20260818`; Full is `343,313,584` bytes with SHA-256 `96beb88d5c1a70c0c55c4f745b525520f9038c9a907ae8d4a5b886a2c86d8388`, and Lite is `4,887,958` bytes with SHA-256 `6156328d91114bfc75f8401328457f9c81d7af334b7f6139a1e6ad6c0ab6e3fd`. No VMware desktop files were modified, and no GitHub upload or commit was performed.
+
+## HUB repository boundary correction — 2026-08-18
+
+- The formal HUB repository is the complete root project, not a catalog shell with an `implementation/` subdirectory and not a pointer to `deepseek-harness-desktop`.
+- The root now contains the buildable applications, packages, native Windows host, Runtime, Setup compiler sources, Setup Registry, catalogs, examples, tests, documentation, bilingual snapshots, and release tooling.
+- The root `scripts/build-hub.ps1` entry builds the HUB launcher from the root workspace and stages only HUB-facing launcher files; the root catalog validator passes with 8 catalog entries and 1 Setup Workspace example.
+- Formal HUB releases must contain HUB-only Setup artifacts. `dsh.exe`, Desktop shortcuts, and Desktop-only release assets are not valid HUB release contents.
+- The previous remote push was blocked by the GitHub HTTPS route and did not update the HUB repository. Do not claim the corrected root layout is public until a later push is confirmed with `git ls-remote`.

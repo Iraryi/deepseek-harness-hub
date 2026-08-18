@@ -4,11 +4,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$implementation = Join-Path $repository 'implementation'
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 
-if (-not (Test-Path -LiteralPath (Join-Path $implementation 'package.json'))) {
-    throw "HUB implementation source is missing: $implementation"
+if (-not (Test-Path -LiteralPath (Join-Path $repository 'package.json'))) {
+    throw "HUB root project is missing: $repository"
 }
 
 foreach ($command in @('node.exe', 'pnpm.cmd')) {
@@ -17,8 +16,8 @@ foreach ($command in @('node.exe', 'pnpm.cmd')) {
     }
 }
 
-$launcherOutput = Join-Path $implementation 'windows\launcher\dist-hub-source'
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $implementation 'windows\launcher\build.ps1') -OutputDirectory $launcherOutput
+$launcherOutput = Join-Path $repository 'windows\launcher\dist-hub-source'
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repository 'windows\launcher\build.ps1') -OutputDirectory $launcherOutput
 if ($LASTEXITCODE -ne 0) { throw "HUB launcher build failed with code $LASTEXITCODE" }
 
 if (Test-Path -LiteralPath $output) {
