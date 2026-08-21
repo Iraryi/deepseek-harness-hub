@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-full-capability-pack",
   "description": "Optional DSH bundle selecting the standard agent preset and durable on-demand session search",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
   },

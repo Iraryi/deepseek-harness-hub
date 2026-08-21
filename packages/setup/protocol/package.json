@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-setup-protocol",
   "description": "Verified manifest and evidence protocol for DeepSeek Harness Setup entries",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.7",
   "publishConfig": {
     "access": "public"
   },
