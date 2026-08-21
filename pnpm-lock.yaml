@@ -9028,6 +9028,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings-plugins':
         specifier: workspace:^
         version: link:../../packages/client/ui-settings-plugins
+      '@deepseek-ai/dsh-client-ui-setup-hub':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-setup-hub
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: workspace:^
         version: link:../../packages/client/ui-sidebar

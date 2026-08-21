@@ -234,6 +234,21 @@ async function stagePnpm(staging) {
       break
     }
   }
+  if (packageDirectory === undefined) {
+    const searchRoots = [
+      process.env.PNPM_HOME,
+      process.env.RUNNER_TOOL_CACHE,
+      process.env.APPDATA === undefined ? undefined : join(process.env.APPDATA, 'npm'),
+    ].filter((value) => value !== undefined)
+    for (const root of searchRoots) {
+      const pattern = `${root.replaceAll('\\', '/')}/**/node_modules/pnpm/bin/pnpm.mjs`
+      const matches = globSync(pattern)
+      if (matches.length > 0) {
+        packageDirectory = resolve(dirname(matches[0]), '..', '..')
+        break
+      }
+    }
+  }
   if (packageDirectory === undefined) throw new Error('pnpm package was not found; install pnpm before building the Windows Runtime')
 
   const destination = join(staging, 'tools', 'pnpm')

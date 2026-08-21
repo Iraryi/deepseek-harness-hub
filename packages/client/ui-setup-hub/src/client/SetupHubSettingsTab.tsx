@@ -39,6 +39,8 @@ import type {
   HubDshmkCatalogPage,
   HubDshmkDetail,
   HubDshmkInstallResult,
+  HubDshmkInstallMode,
+  HubDshmkLiveMetadata,
   HubDshmkProject,
   HubInstallProgress,
   HubInstalledItem,
@@ -58,6 +60,7 @@ import {
   type CommunitySort,
   type CommunityTimeRange,
 } from './community.ts'
+import { subscribeHubCatalogUpdates } from './bridge.ts'
 import type { SetupHubLocaleKey } from './locales.ts'
 import css from './SetupHubSettingsTab.module.css'
 
@@ -669,8 +672,11 @@ function DshmkDiscovery(props: {
   const [catalog, setCatalog] = useState<AsyncState<HubDshmkCatalogPage>>({ status: 'loading' })
   const [selected, setSelected] = useState<HubDshmkProject | undefined>()
   const [detail, setDetail] = useState<AsyncState<HubDshmkDetail>>({ status: 'idle' })
+  const [liveMetadata, setLiveMetadata] = useState<Readonly<Record<string, HubDshmkLiveMetadata>>>({})
   const [installSurface, setInstallSurface] = useState<DshmkInstallSurface>({ status: 'idle' })
   const scrollPosition = useRef(0)
+
+  useEffect(() => subscribeHubCatalogUpdates(() => { setRequestVersion(version => version + 1) }), [])
 
   useEffect(() => {
     let current = true
@@ -685,6 +691,12 @@ function DshmkDiscovery(props: {
           }
           setCatalog({ status: 'ready', data: value })
           if (value.page !== page) setPage(value.page)
+          void props.requestHub<Readonly<Record<string, HubDshmkLiveMetadata>>>('dshmk-live-metadata', {
+            repositoryIds: value.items.map(item => item.repositoryId),
+          }).then(
+            (metadata) => { if (current) setLiveMetadata(existing => ({ ...existing, ...metadata })) },
+            () => undefined,
+          )
         },
         (error) => { if (current) setCatalog({ status: 'error', message: errorMessage(error) }) },
       )
@@ -696,11 +708,21 @@ function DshmkDiscovery(props: {
   const openDetail = (project: HubDshmkProject): void => {
     const host = document.querySelector<HTMLElement>('main[data-section="github"]')
     scrollPosition.current = host?.scrollTop ?? 0
-    setSelected(project)
+    setSelected(mergeDshmkLiveMetadata(project, liveMetadata))
     setDetail({ status: 'loading' })
     void props.requestHub<HubDshmkDetail>('dshmk-detail', { repositoryId: project.repositoryId }).then(
-      (value) => { setDetail({ status: 'ready', data: value }) },
+      (value) => { setDetail({ status: 'ready', data: mergeDshmkDetailLiveMetadata(value, liveMetadata) }) },
       (error) => { setDetail({ status: 'error', message: errorMessage(error) }) },
+    )
+    void props.requestHub<Readonly<Record<string, HubDshmkLiveMetadata>>>('dshmk-live-metadata', {
+      repositoryIds: [project.repositoryId],
+    }).then(
+      (metadata) => {
+        setLiveMetadata(existing => ({ ...existing, ...metadata }))
+        setSelected(current => current?.repositoryId === project.repositoryId ? mergeDshmkLiveMetadata(current, metadata) : current)
+        setDetail(current => current.status === 'ready' ? { ...current, data: mergeDshmkDetailLiveMetadata(current.data, metadata) } : current)
+      },
+      () => undefined,
     )
   }
   const closeDetail = (): void => {
@@ -712,6 +734,7 @@ function DshmkDiscovery(props: {
     })
   }
   const installProject = (project: HubDshmkProject): void => {
+    if (dshmkInstallMode(project) !== 'one-click') return
     const initial: HubInstallProgress = { detail: project.install.candidate.command ?? '', message: props.t('setupStagePreflightBody'), percent: 4, stage: 'preflight', timestamp: new Date().toISOString() }
     setInstallSurface({ status: 'running', project, progress: initial, logs: [initial] })
     void props.requestHub<HubDshmkInstallResult>('dshmk-install', { repositoryId: project.repositoryId }, {
@@ -807,7 +830,7 @@ function DshmkDiscovery(props: {
                 installed={props.installedIds.has(`dshmk-${project.repositoryId}`) || installSurface.status === 'success' && installSurface.project.repositoryId === project.repositoryId}
                 onInstall={installProject}
                 onOpen={openDetail}
-                project={project}
+                project={mergeDshmkLiveMetadata(project, liveMetadata)}
                 t={props.t}
               />
             ))}</div>
@@ -824,7 +847,7 @@ function DshmkDiscovery(props: {
           onClose={closeDetail}
           onInstall={installProject}
           onOpenRelated={openDetail}
-          project={selected}
+          project={mergeDshmkLiveMetadata(selected, liveMetadata)}
           t={props.t}
         />
       )}
@@ -862,12 +885,15 @@ function DshmkCard(props: {
   readonly t: SetupHubDesktopSurfaceProps['t']
 }): ReactNode {
   const project = props.project
+  const installMode = dshmkInstallMode(project)
+  const canInstall = installMode === 'one-click'
+  const liveStars = project.liveMetadata?.githubStars ?? project.stars
   const body = (
     <>
       <div className={css.communityTop}>
         <DshmkProjectIcon project={project} />
         <div><strong>{project.name}</strong><span>{project.fullName}</span></div>
-        <b>★ {project.stars}</b>
+        <b>★ {liveStars}</b>
       </div>
       <p>{project.description || props.t('noDescription')}</p>
       <div className={css.cardTags}>{project.categories.slice(0, 4).map(tag => <i key={tag}>{dshmkCategoryLabel(tag, resolveLanguage())}</i>)}</div>
@@ -875,6 +901,7 @@ function DshmkCard(props: {
         <span data-verified={project.verified || undefined}><IconCheckOutline16 size={14} />{project.validation.label || project.validation.overall}</span>
         <span>{dshmkTypeLabel(project.projectType, resolveLanguage())}</span>
         <span>{project.language || props.t('unknown')}</span>
+        {project.liveMetadata?.validationStale ? <span className={css.dshmkLiveMeta} data-status="stale">{props.t('sourceUpdatedSinceValidation')}</span> : null}
       </div>
     </>
   )
@@ -886,9 +913,9 @@ function DshmkCard(props: {
       <div className={css.communityActions}>
         <a href={project.url} target="_blank" rel="noreferrer" onClick={(event) => { event.stopPropagation() }}>{props.t('viewRepository')} <IconRightUpOutline14 /></a>
         {props.detailEntry === 'button' ? <button className={css.secondaryAction} type="button" onClick={() => { props.onOpen(project) }}><IconDataOutline16 size={15} />{props.t('details')}</button> : null}
-        <button type="button" data-busy={props.busy || undefined} disabled={!props.desktopAvailable || !project.installable || props.busy || props.installed} onClick={() => { props.onInstall(project) }}>
+        <button type="button" data-busy={props.busy || undefined} disabled={!props.desktopAvailable || !canInstall || props.busy || props.installed} onClick={() => { props.onInstall(project) }}>
           {props.busy ? <IconRefreshOutline16 size={15} /> : props.installed ? <IconCheckOutline16 size={15} /> : <IconDownloadOutline16 size={15} />}
-          {props.busy ? props.t('installing') : props.installed ? props.t('installedShort') : project.installable ? props.t('oneClickSetup') : props.t('localBuildRequired')}
+          {props.busy ? props.t('installing') : props.installed ? props.t('installedShort') : props.t(dshmkInstallLabel(installMode))}
         </button>
       </div>
     </article>
@@ -941,7 +968,8 @@ function DshmkFilterMenu(props: {
         <FilterChoiceGroup label={props.t('projectType')} value={props.projectType} options={props.typeOptions} onChange={props.onProjectType} />
         <FilterChoiceGroup label={props.t('validationFilter')} value={props.validation} options={[
           { value: 'all', label: props.t('allValidation') }, { value: 'verified', label: props.t('verifiedOnly') },
-          { value: 'installable', label: props.t('installableOnly') }, { value: 'local', label: props.t('localBuildOnly') },
+          { value: 'installable', label: props.t('installableOnly') }, { value: 'reference', label: props.t('referenceOnly') },
+          { value: 'ambiguous', label: props.t('ambiguousOnly') }, { value: 'local', label: props.t('localBuildOnly') },
         ]} onChange={props.onValidation} />
         <FilterChoiceGroup label={props.t('pageSize')} value={String(props.pageSize)} options={[12, 24, 48, 96, 200].map(value => ({ value: String(value), label: `${value} / ${props.t('page')}` }))} onChange={props.onPageSize} />
       </div>
@@ -1003,27 +1031,45 @@ function DshmkNativeDetail(props: {
   readonly t: SetupHubDesktopSurfaceProps['t']
 }): ReactNode {
   const project = props.detail.project
+  const installMode = dshmkInstallMode(project)
+  const canInstall = installMode === 'one-click'
+  const live = project.liveMetadata
+  const liveStars = live?.githubStars ?? project.stars
   const stages = Object.entries(project.validation.stages)
   return (
     <div className={css.dshmkDetailContent}>
       <div className={css.dshmkDetailLead}>
         <div><span>{dshmkCategoryLabel(project.category, resolveLanguage())}</span><h2>{project.name}</h2><p>{project.description || props.t('noDescription')}</p></div>
-        <button type="button" disabled={!project.installable || props.installed} onClick={() => { props.onInstall(project) }}><IconDownloadOutline16 size={17} />{props.installed ? props.t('installedShort') : project.installable ? props.t('oneClickSetup') : props.t('localBuildRequired')}</button>
+        <button type="button" disabled={!canInstall || props.installed} onClick={() => { props.onInstall(project) }}><IconDownloadOutline16 size={17} />{props.installed ? props.t('installedShort') : props.t(dshmkInstallLabel(installMode))}</button>
       </div>
       <div className={css.dshmkMetricGrid}>
-        <article><span>{props.t('stars')}</span><strong>{project.stars}</strong></article>
+        <article><span>{props.t('stars')}</span><strong>{liveStars}</strong></article>
         <article><span>{props.t('license')}</span><strong>{project.license || 'NOASSERTION'}</strong></article>
         <article><span>{props.t('validationEvidence')}</span><strong>{project.validation.label || project.validation.overall}</strong></article>
         <article><span>{props.t('sourceCommit')}</span><strong>{project.validation.sourceSha.slice(0, 12) || props.t('notPinned')}</strong></article>
       </div>
+      <section className={css.dshmkLiveMetadata} data-status={live?.status ?? 'unavailable'}>
+        <header><h3>{props.t('liveMetadata')}</h3><span>{dshmkLiveStatusLabel(live, props.t)}</span></header>
+        <div className={css.dshmkLiveMetadataGrid}>
+          <div><span>{props.t('githubStars')}</span><strong>{live?.githubStars ?? project.stars}</strong></div>
+          <div><span>{props.t('githubUpdated')}</span><strong>{formatDate(live?.githubUpdatedAt, resolveLanguage())}</strong></div>
+          <div><span>{props.t('githubPushed')}</span><strong>{formatDate(live?.githubPushedAt, resolveLanguage())}</strong></div>
+          <div><span>{props.t('npmVersion')}</span><strong>{live?.npmVersion ?? '—'}</strong></div>
+          <div><span>{props.t('npmUpdated')}</span><strong>{formatDate(live?.npmUpdatedAt, resolveLanguage())}</strong></div>
+          <div><span>{props.t('metadataFetched')}</span><strong>{formatDate(live?.fetchedAt, resolveLanguage())}</strong></div>
+        </div>
+        {live?.validationStale ? <p>{props.t('sourceUpdatedSinceValidation')}</p> : null}
+        {live?.error ? <small>{live.error}</small> : null}
+      </section>
       <section className={css.installReference}>
-        <div><span>{props.t('installReference')}</span><strong>{project.install.candidate.evidence?.heading ?? project.install.status}</strong></div>
-        <code>{project.install.candidate.command ?? props.t('localBuildRequired')}</code>
+        <div><span>{props.t('installReference')}</span><strong>{props.t(dshmkInstallLabel(installMode))}</strong></div>
+        <code>{dshmkInstallReference(project, props.t)}</code>
+        {project.install.candidate.command ? <button type="button" onClick={() => { void copyText(project.install.candidate.command ?? '') }}>{props.t('copyInstallReference')}</button> : null}
         <small>{project.install.candidate.evidence?.source ?? 'dshmk'} · {project.install.candidate.evidence?.pattern ?? project.validation.platform}</small>
       </section>
       <div className={css.dshmkDetailColumns}>
         <section><h3>{props.t('validationEvidence')}</h3><div className={css.validationStages}>{stages.map(([id, stage]) => <div key={id}><IconCheckOutline16 size={15} /><span>{humanizeIdentifier(id)}</span><b>{stage.status ?? 'unknown'}</b></div>)}</div></section>
-        <section><h3>{props.t('sourceCertificate')}</h3><dl><div><dt>{props.t('source')}</dt><dd>{project.fullName}</dd></div><div><dt>{props.t('projectType')}</dt><dd>{dshmkTypeLabel(project.projectType, resolveLanguage())}</dd></div><div><dt>{props.t('updated')}</dt><dd>{formatDate(project.updatedAt, resolveLanguage())}</dd></div><div><dt>{props.t('compatibility')}</dt><dd>{project.validation.dshVersion || 'DSH'}</dd></div></dl></section>
+        <section><h3>{props.t('sourceCertificate')}</h3><dl><div><dt>{props.t('source')}</dt><dd>{project.fullName}</dd></div><div><dt>{props.t('projectType')}</dt><dd>{dshmkTypeLabel(project.projectType, resolveLanguage())}</dd></div><div><dt>{props.t('validationSnapshot')}</dt><dd>{formatDate(project.validation.updatedAt, resolveLanguage())}</dd></div><div><dt>{props.t('updated')}</dt><dd>{formatDate(live?.githubUpdatedAt ?? project.updatedAt, resolveLanguage())}</dd></div><div><dt>{props.t('compatibility')}</dt><dd>{project.validation.dshVersion || 'DSH'}</dd></div></dl></section>
       </div>
       <section className={css.relatedProjects}><h3>{props.t('relatedProjects')}</h3><div>{props.detail.related.map(item => <button key={item.repositoryId} type="button" onClick={() => { props.onOpenRelated(item) }}><DshmkProjectIcon project={item} /><span><strong>{item.name}</strong><small>★ {item.stars} · {dshmkCategoryLabel(item.category, resolveLanguage())}</small></span></button>)}</div></section>
     </div>
@@ -1170,6 +1216,27 @@ function setupStageBody(stage: HubInstallProgress['stage']): SetupHubLocaleKey {
   if (stage === 'profile') return 'setupStageProfileBody'
   if (stage === 'activation') return 'setupStageActivationBody'
   return 'setupStageVerifyBody'
+}
+
+function dshmkInstallMode(project: HubDshmkProject): HubDshmkInstallMode {
+  if (project.installMode === 'one-click' || project.installMode === 'reference' || project.installMode === 'ambiguous' || project.installMode === 'local') return project.installMode
+  if (project.installable) return 'one-click'
+  if (project.install.status === 'ambiguous' || project.install.candidates.length > 1) return 'ambiguous'
+  if (project.install.candidate.command || (project.install.candidate.args?.length ?? 0) > 0 || project.install.candidates.length === 1) return 'reference'
+  return 'local'
+}
+
+function dshmkInstallLabel(mode: HubDshmkInstallMode): SetupHubLocaleKey {
+  if (mode === 'one-click') return 'oneClickSetup'
+  if (mode === 'reference') return 'referenceSetup'
+  if (mode === 'ambiguous') return 'ambiguousSetup'
+  return 'localBuildRequired'
+}
+
+function dshmkInstallReference(project: HubDshmkProject, t: SetupHubDesktopSurfaceProps['t']): string {
+  if (project.install.candidate.command) return project.install.candidate.command
+  const commands = project.install.candidates.map(candidate => candidate.command).filter((command): command is string => typeof command === 'string' && command.length > 0)
+  return commands.length > 0 ? commands.join('\n') : t(dshmkInstallLabel(dshmkInstallMode(project)))
 }
 
 function dshmkCategoryLabel(value: string, language: 'zh' | 'en'): string {
@@ -1912,6 +1979,25 @@ function useHubTheme(theme: HubTheme): void {
 
 function resolveLanguage(): 'zh' | 'en' { return document.documentElement.lang.toLocaleLowerCase().startsWith('zh') ? 'zh' : 'en' }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+
+function mergeDshmkLiveMetadata(project: HubDshmkProject, metadata: Readonly<Record<string, HubDshmkLiveMetadata>>): HubDshmkProject {
+  const live = metadata[String(project.repositoryId)] ?? project.liveMetadata
+  return live === undefined ? project : { ...project, liveMetadata: live }
+}
+
+function mergeDshmkDetailLiveMetadata(detail: HubDshmkDetail, metadata: Readonly<Record<string, HubDshmkLiveMetadata>>): HubDshmkDetail {
+  return {
+    ...detail,
+    project: mergeDshmkLiveMetadata(detail.project, metadata),
+    related: detail.related.map(project => mergeDshmkLiveMetadata(project, metadata)),
+  }
+}
+
+function dshmkLiveStatusLabel(live: HubDshmkLiveMetadata | undefined, t: SetupHubDesktopSurfaceProps['t']): string {
+  if (live?.status === 'fresh') return t('liveMetadataFresh')
+  if (live?.status === 'partial') return t('liveMetadataPartial')
+  return t('liveMetadataUnavailable')
+}
 
 function isDshmkCatalogPage(value: unknown): value is HubDshmkCatalogPage {
   if (!isRecord(value)) return false

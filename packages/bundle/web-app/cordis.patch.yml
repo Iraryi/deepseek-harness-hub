@@ -195,9 +195,6 @@
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
-    - id: ui-setup-hub
-      name: '@deepseek-ai/dsh-client-ui-setup-hub'
-
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
 

@@ -257,7 +257,8 @@ if (-not $SkipSmoke) {
     Invoke-WindowModeGeometrySmoke
     Invoke-Checked 'powershell.exe' @(
       '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $launcherRoot 'smoke-first-run-handoff.ps1'),
-      '-AppDirectory', $launcherDist
+      '-AppDirectory', $launcherDist,
+      '-RuntimeDirectory', $runtimeDist
     ) $repository
     Invoke-Checked 'powershell.exe' @(
       '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $launcherRoot 'smoke-service-gate.ps1'),

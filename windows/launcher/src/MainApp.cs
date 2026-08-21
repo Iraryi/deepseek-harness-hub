@@ -213,7 +213,9 @@ internal static class Program
 
     private static string BuildInstanceSuffix()
     {
-        string value = Environment.GetEnvironmentVariable("DEEPSEEK_HARNESS_INSTANCE_SCOPE");
+        string value = AppPaths.CommandLineInstanceScope;
+        if (string.IsNullOrEmpty(value)) value = Environment.GetEnvironmentVariable("DEEPSEEK_HARNESS_INSTANCE_SCOPE");
+        if (string.IsNullOrEmpty(value) && AppPaths.IsPortable) value = AppPaths.ExeDir;
         if (string.IsNullOrEmpty(value)) return "DEFAULT";
         value = value.ToUpperInvariant();
         unchecked
@@ -674,6 +676,12 @@ internal sealed class MainForm : Form
         public int InstallableCount;
     }
 
+    private sealed class DshmkLiveMetadataCacheEntry
+    {
+        public Dictionary<string, object> Data;
+        public DateTime ExpiresUtc;
+    }
+
     private sealed class ManualDownloadSession
     {
         public string Id;
@@ -691,11 +699,17 @@ internal sealed class MainForm : Form
 
     private const int MaxWebMessageCharacters = 4 * 1024 * 1024;
     private const int MaxCommunityRegistryCharacters = 8 * 1024 * 1024;
-    private const int MaxDshmkCatalogCharacters = 16 * 1024 * 1024;
+    private const int MaxDshmkCatalogCharacters = 32 * 1024 * 1024;
     private const long MaxCommunityArtifactBytes = 256L * 1024L * 1024L;
     private const string CommunityRegistryUrl = "https://awesome-dsh-plugin.com/plugins.json";
     private const string DshmkCatalogUrl = "https://dshmk.com/catalog.json";
     private const string DshmkCatalogRawUrl = "https://raw.githubusercontent.com/ZASENJC/dsh-plugins-store/main/src/data/catalog.json";
+    private static readonly TimeSpan DshmkLiveCatalogTimeout = TimeSpan.FromMinutes(4);
+    private static readonly TimeSpan DshmkAlternateCatalogTimeout = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan DshmkLiveMetadataCacheDuration = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan DshmkLiveMetadataFailureCacheDuration = TimeSpan.FromMinutes(2);
+    private const int MaxDshmkLiveMetadataProjects = 24;
+    private const int MaxDshmkLiveMetadataConcurrency = 4;
     private const int MaxWebUiRetries = 1;
     private const int MaxWebUiServiceRecoveries = 1;
     private const int WebUiStatusIdleTimeoutMilliseconds = 45000;
@@ -822,6 +836,8 @@ internal sealed class MainForm : Form
     private bool _dshmkCatalogRefreshRunning;
     private string _dshmkCatalogSourceMode;
     private string _dshmkCatalogSourceUrl;
+    private readonly object _dshmkLiveMetadataSync = new object();
+    private readonly Dictionary<string, DshmkLiveMetadataCacheEntry> _dshmkLiveMetadataCache = new Dictionary<string, DshmkLiveMetadataCacheEntry>(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, object> _communityRegistryCache;
     private DateTime _communityRegistryCacheUntilUtc;
     private bool _serviceStartWaiting;
@@ -2067,6 +2083,7 @@ internal sealed class MainForm : Form
             if (operation == "hub-snapshot") data = BuildHubSnapshot();
             else if (operation == "dshmk-catalog") data = await QueryDshmkCatalogAsync(payload);
             else if (operation == "dshmk-detail") data = await LoadDshmkDetailAsync(GetInteger(payload, "repositoryId"));
+            else if (operation == "dshmk-live-metadata") data = await QueryDshmkLiveMetadataAsync(payload);
             else if (operation == "dshmk-install") data = await InstallDshmkSetupAsync(requestId, GetInteger(payload, "repositoryId"));
             else if (operation == "setup-cancel") data = CancelActiveSetup();
             else if (operation == "setup-manual-import") data = await ImportManualDownloadAsync(GetString(payload, "downloadId"));
@@ -2124,6 +2141,7 @@ internal sealed class MainForm : Form
     private static string HubCommunityRegistryFile { get { return Path.Combine(HubRoot, "community-registry.json"); } }
     private static string BundledCommunityRegistryFile { get { return Path.Combine(AppPaths.ExeDir, "community-registry.json"); } }
     private static string HubDshmkCatalogFile { get { return Path.Combine(HubRoot, "dshmk-catalog.json"); } }
+    private static string HubDshmkCatalogProvenanceFile { get { return Path.Combine(HubRoot, "dshmk-catalog-provenance.json"); } }
     private static string BundledDshmkCatalogFile { get { return Path.Combine(AppPaths.ExeDir, "dshmk-catalog.json"); } }
     private static string HubGitHubTokenFile { get { return Path.Combine(HubRoot, "github-token.bin"); } }
     private static string HubGitHubAccountFile { get { return Path.Combine(HubRoot, "github-account.json"); } }
@@ -2385,8 +2403,11 @@ internal sealed class MainForm : Form
             if (!File.Exists(candidate.Key)) continue;
             try
             {
+                string mode = candidate.Value;
+                if (string.Equals(mode, "cache", StringComparison.OrdinalIgnoreCase)
+                    && HasLiveDshmkCatalogProvenance()) mode = "live";
                 localSnapshots.Add(CreateDshmkCatalogSnapshot(
-                    ParseDshmkCatalog(File.ReadAllText(candidate.Key, Encoding.UTF8)), candidate.Value, candidate.Key));
+                    ParseDshmkCatalog(File.ReadAllText(candidate.Key, Encoding.UTF8)), mode, candidate.Key));
             }
             catch (Exception ex)
             {
@@ -2425,12 +2446,16 @@ internal sealed class MainForm : Form
         {
             try
             {
-                string json = await DownloadCommunityTextAsync(url, MaxDshmkCatalogCharacters, TimeSpan.FromSeconds(16));
+                TimeSpan timeout = string.Equals(url, DshmkCatalogUrl, StringComparison.OrdinalIgnoreCase)
+                    ? DshmkLiveCatalogTimeout
+                    : DshmkAlternateCatalogTimeout;
+                string json = await DownloadCommunityTextAsync(url, MaxDshmkCatalogCharacters, timeout);
                 Dictionary<string, object> live = ParseDshmkCatalog(json);
                 if (_dshmkCatalogCache != null && DshmkCatalogCapabilitiesRegressed(_dshmkCatalogCache, live))
                     throw new InvalidOperationException("DSHMK live catalog was rejected because its repository or one-click candidate coverage regressed unexpectedly.");
                 EnsureHubDirectories();
                 WriteTextAtomic(HubDshmkCatalogFile, json);
+                WriteDshmkCatalogProvenance(url);
                 _dshmkCatalogCache = live;
                 _dshmkCatalogCacheUntilUtc = DateTime.UtcNow.AddMinutes(30);
                 _dshmkCatalogSourceMode = "live";
@@ -2444,6 +2469,37 @@ internal sealed class MainForm : Form
             }
         }
         throw new InvalidOperationException("DSHMK is unavailable online and no valid local catalog snapshot exists.", liveFailure);
+    }
+
+    private static bool HasLiveDshmkCatalogProvenance()
+    {
+        if (!File.Exists(HubDshmkCatalogFile) || !File.Exists(HubDshmkCatalogProvenanceFile)) return false;
+        try
+        {
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            Dictionary<string, object> provenance = serializer.DeserializeObject(
+                File.ReadAllText(HubDshmkCatalogProvenanceFile, Encoding.UTF8)) as Dictionary<string, object>;
+            if (provenance == null || !string.Equals(GetString(provenance, "sourceMode"), "live", StringComparison.OrdinalIgnoreCase)) return false;
+            object catalogLengthValue;
+            if (!provenance.TryGetValue("catalogLength", out catalogLengthValue) || catalogLengthValue == null) return false;
+            string catalogLength = Convert.ToString(catalogLengthValue, CultureInfo.InvariantCulture);
+            string currentLength = new FileInfo(HubDshmkCatalogFile).Length.ToString(CultureInfo.InvariantCulture);
+            return string.Equals(catalogLength, currentLength, StringComparison.Ordinal);
+        }
+        catch { return false; }
+    }
+
+    private static void WriteDshmkCatalogProvenance(string sourceUrl)
+    {
+        JavaScriptSerializer serializer = new JavaScriptSerializer();
+        Dictionary<string, object> provenance = new Dictionary<string, object>
+        {
+            { "sourceMode", "live" },
+            { "sourceUrl", sourceUrl },
+            { "fetchedAt", DateTime.UtcNow.ToString("o") },
+            { "catalogLength", new FileInfo(HubDshmkCatalogFile).Length.ToString(CultureInfo.InvariantCulture) }
+        };
+        WriteTextAtomic(HubDshmkCatalogProvenanceFile, FormatJson(serializer.Serialize(provenance)));
     }
 
     private static DshmkCatalogSnapshot CreateDshmkCatalogSnapshot(Dictionary<string, object> catalog, string mode, string path)
@@ -2484,9 +2540,34 @@ internal sealed class MainForm : Form
         if (string.Equals(Environment.GetEnvironmentVariable("DEEPSEEK_HARNESS_OFFLINE"), "1", StringComparison.Ordinal)) return;
         if (_dshmkCatalogRefreshRunning) return;
         _dshmkCatalogRefreshRunning = true;
-        try { await DownloadDshmkCatalogAsync(); }
+        try
+        {
+            await DownloadDshmkCatalogAsync();
+            AppendLog("DSHMK background refresh loaded the live catalog");
+            PostDshmkCatalogUpdated();
+        }
         catch (Exception ex) { AppendLog("DSHMK background refresh retained the local snapshot: " + ex.Message); }
         finally { _dshmkCatalogRefreshRunning = false; }
+    }
+
+    private void PostDshmkCatalogUpdated()
+    {
+        if (InvokeRequired)
+        {
+            try { BeginInvoke((MethodInvoker)PostDshmkCatalogUpdated); }
+            catch { }
+            return;
+        }
+        if (_webView == null || _webView.IsDisposed || _webView.CoreWebView2 == null) return;
+        JavaScriptSerializer serializer = new JavaScriptSerializer();
+        serializer.MaxJsonLength = MaxWebMessageCharacters;
+        _webView.CoreWebView2.PostWebMessageAsJson(serializer.Serialize(new Dictionary<string, object>
+        {
+            { "type", "dsh-hub-catalog-updated" },
+            { "sourceMode", string.IsNullOrEmpty(_dshmkCatalogSourceMode) ? "live" : _dshmkCatalogSourceMode },
+            { "sourceUrl", string.IsNullOrEmpty(_dshmkCatalogSourceUrl) ? DshmkCatalogUrl : _dshmkCatalogSourceUrl },
+            { "generatedAt", GetString(_dshmkCatalogCache, "generatedAt") }
+        }));
     }
 
     private static Dictionary<string, object> ParseDshmkCatalog(string json)
@@ -2540,8 +2621,11 @@ internal sealed class MainForm : Form
             if (!DshmkMatchesQuery(repository, query, searchScope)) continue;
             if (projectType != "all" && !string.Equals(GetString(repository, "projectType"), projectType, StringComparison.OrdinalIgnoreCase)) continue;
             if (validation == "verified" && !DshmkIsVerified(repository)) continue;
-            if (validation == "installable" && !DshmkIsInstallable(repository)) continue;
-            if (validation == "local" && DshmkIsInstallable(repository)) continue;
+            string installMode = DshmkInstallMode(repository);
+            if (validation == "installable" && installMode != "one-click") continue;
+            if (validation == "reference" && installMode != "reference") continue;
+            if (validation == "ambiguous" && installMode != "ambiguous") continue;
+            if (validation == "local" && installMode != "local") continue;
             eligible.Add(repository);
         }
 
@@ -2565,8 +2649,8 @@ internal sealed class MainForm : Form
             if (sort == "name") return string.Compare(GetString(left, "name"), GetString(right, "name"), StringComparison.OrdinalIgnoreCase);
             int verified = DshmkIsVerified(right).CompareTo(DshmkIsVerified(left));
             if (verified != 0) return verified;
-            int installable = DshmkIsInstallable(right).CompareTo(DshmkIsInstallable(left));
-            if (installable != 0) return installable;
+            int installMode = DshmkInstallModeRank(right).CompareTo(DshmkInstallModeRank(left));
+            if (installMode != 0) return installMode;
             return CompareDshmkInteger(right, left, "stars", "name");
         });
 
@@ -2615,6 +2699,176 @@ internal sealed class MainForm : Form
         };
     }
 
+    private async Task<Dictionary<string, object>> QueryDshmkLiveMetadataAsync(Dictionary<string, object> payload)
+    {
+        Dictionary<string, object> catalog = await LoadDshmkCatalogAsync();
+        HashSet<int> requested = new HashSet<int>();
+        foreach (object value in GetArray(payload, "repositoryIds") ?? new object[0])
+        {
+            int repositoryId = 0;
+            if (value is int) repositoryId = (int)value;
+            else if (value is long) repositoryId = (int)Math.Min(int.MaxValue, (long)value);
+            else if (value is decimal) repositoryId = (int)Math.Min(int.MaxValue, (decimal)value);
+            else if (value is double) repositoryId = (int)Math.Min(int.MaxValue, (double)value);
+            if (repositoryId > 0 && requested.Count < MaxDshmkLiveMetadataProjects) requested.Add(repositoryId);
+        }
+
+        string token = "";
+        try { token = ReadGitHubToken(false); }
+        catch (Exception ex) { AppendLog("Live DSHMK metadata will use anonymous GitHub access: " + ex.Message); }
+
+        List<Task<KeyValuePair<string, Dictionary<string, object>>>> requests = new List<Task<KeyValuePair<string, Dictionary<string, object>>>>();
+        using (SemaphoreSlim gate = new SemaphoreSlim(MaxDshmkLiveMetadataConcurrency, MaxDshmkLiveMetadataConcurrency))
+        {
+            foreach (int repositoryId in requested)
+            {
+                Dictionary<string, object> repository = FindDshmkRepository(catalog, repositoryId);
+                if (repository != null) requests.Add(FetchDshmkLiveMetadataAsync(repository, token, gate));
+            }
+            KeyValuePair<string, Dictionary<string, object>>[] values = await Task.WhenAll(requests);
+            Dictionary<string, object> result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, Dictionary<string, object>> value in values) result[value.Key] = value.Value;
+            return result;
+        }
+    }
+
+    private async Task<KeyValuePair<string, Dictionary<string, object>>> FetchDshmkLiveMetadataAsync(
+        Dictionary<string, object> repository, string token, SemaphoreSlim gate)
+    {
+        int repositoryId = GetInteger(repository, "repositoryId");
+        string cacheKey = repositoryId.ToString(CultureInfo.InvariantCulture);
+        Dictionary<string, object> cached;
+        if (TryReadDshmkLiveMetadataCache(cacheKey, out cached))
+            return new KeyValuePair<string, Dictionary<string, object>>(cacheKey, cached);
+
+        await gate.WaitAsync();
+        try
+        {
+            if (TryReadDshmkLiveMetadataCache(cacheKey, out cached))
+                return new KeyValuePair<string, Dictionary<string, object>>(cacheKey, cached);
+
+            Dictionary<string, object> metadata = await BuildDshmkLiveMetadataAsync(repository, token);
+            DateTime now = DateTime.UtcNow;
+            bool available = !string.Equals(GetString(metadata, "status"), "unavailable", StringComparison.OrdinalIgnoreCase);
+            lock (_dshmkLiveMetadataSync)
+            {
+                _dshmkLiveMetadataCache[cacheKey] = new DshmkLiveMetadataCacheEntry
+                {
+                    Data = metadata,
+                    ExpiresUtc = now.Add(available ? DshmkLiveMetadataCacheDuration : DshmkLiveMetadataFailureCacheDuration)
+                };
+            }
+            return new KeyValuePair<string, Dictionary<string, object>>(cacheKey, metadata);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private bool TryReadDshmkLiveMetadataCache(string key, out Dictionary<string, object> data)
+    {
+        lock (_dshmkLiveMetadataSync)
+        {
+            DshmkLiveMetadataCacheEntry entry;
+            if (_dshmkLiveMetadataCache.TryGetValue(key, out entry) && DateTime.UtcNow < entry.ExpiresUtc)
+            {
+                data = entry.Data;
+                return true;
+            }
+            if (entry != null) _dshmkLiveMetadataCache.Remove(key);
+        }
+        data = null;
+        return false;
+    }
+
+    private async Task<Dictionary<string, object>> BuildDshmkLiveMetadataAsync(Dictionary<string, object> repository, string token)
+    {
+        string fullName = GetString(repository, "fullName");
+        bool githubOk = false;
+        bool npmExpected = false;
+        bool npmOk = false;
+        Dictionary<string, object> github = null;
+        Dictionary<string, object> npm = null;
+        List<string> failures = new List<string>();
+
+        try
+        {
+            if (string.IsNullOrEmpty(fullName)) throw new InvalidOperationException("DSHMK repository identity is missing.");
+            github = await GitHubApiAsync("/repos/" + fullName, token, false) as Dictionary<string, object>;
+            if (github == null || !string.Equals(GetString(github, "full_name"), fullName, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("GitHub returned a different repository identity.");
+            githubOk = true;
+        }
+        catch (Exception ex)
+        {
+            failures.Add("GitHub: " + LimitDiagnosticText(ex.Message, "request failed"));
+        }
+
+        Dictionary<string, object> candidate = DshmkSelectedCandidate(repository);
+        string[] candidateArgs = GetRawStringArray(candidate, "args");
+        string candidateSource = GetString(candidate, "source");
+        string packageSpec = candidateArgs.Length >= 5 ? candidateArgs[4] : "";
+        string npmName = string.Equals(candidateSource, "npm", StringComparison.OrdinalIgnoreCase)
+            ? ResolveNpmPackageName(packageSpec)
+            : "";
+        npmExpected = !string.IsNullOrEmpty(npmName);
+        if (npmExpected)
+        {
+            try
+            {
+                npm = await DownloadCommunityJsonAsync("https://registry.npmjs.org/" + Uri.EscapeDataString(npmName), 4 * 1024 * 1024);
+                if (!string.Equals(GetString(npm, "name"), npmName, StringComparison.Ordinal))
+                    throw new InvalidOperationException("npm returned a different package identity.");
+                npmOk = true;
+            }
+            catch (Exception ex)
+            {
+                failures.Add("npm: " + LimitDiagnosticText(ex.Message, "request failed"));
+            }
+        }
+
+        string status = githubOk && (!npmExpected || npmOk) ? "fresh" : githubOk || npmOk ? "partial" : "unavailable";
+        Dictionary<string, object> result = new Dictionary<string, object>
+        {
+            { "status", status },
+            { "fetchedAt", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) }
+        };
+        if (githubOk)
+        {
+            result["githubStars"] = GetInteger(github, "stargazers_count");
+            result["githubUpdatedAt"] = GetString(github, "updated_at");
+            result["githubPushedAt"] = GetString(github, "pushed_at");
+            result["githubTopics"] = GetRawStringArray(github, "topics");
+            result["validationStale"] = DshmkSourceChangedSinceValidation(repository, github);
+        }
+        if (npmOk)
+        {
+            Dictionary<string, object> tags = GetDictionary(npm, "dist-tags");
+            string version = GetString(tags, "latest");
+            Dictionary<string, object> times = GetDictionary(npm, "time");
+            result["npmPackage"] = npmName;
+            result["npmVersion"] = version;
+            result["npmUpdatedAt"] = GetString(times, "modified");
+            result["npmPublishedAt"] = GetString(times, version);
+        }
+        if (failures.Count > 0) result["error"] = string.Join(" ", failures.ToArray());
+        return result;
+    }
+
+    private static bool DshmkSourceChangedSinceValidation(Dictionary<string, object> repository, Dictionary<string, object> github)
+    {
+        string validationDate = GetString(GetDictionary(repository, "validation"), "updatedAt");
+        string liveDate = GetString(github, "pushed_at");
+        if (string.IsNullOrEmpty(liveDate)) liveDate = GetString(github, "updated_at");
+        DateTime validationAt;
+        DateTime liveAt;
+        if (string.IsNullOrEmpty(validationDate) || string.IsNullOrEmpty(liveDate)
+            || !DateTime.TryParse(validationDate, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out validationAt)
+            || !DateTime.TryParse(liveDate, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out liveAt)) return false;
+        return liveAt > validationAt;
+    }
+
     private static Dictionary<string, object> FindDshmkRepository(Dictionary<string, object> catalog, int repositoryId)
     {
         foreach (object value in GetArray(catalog, "repositories") ?? new object[0])
@@ -2630,7 +2884,7 @@ internal sealed class MainForm : Form
         Dictionary<string, object> owner = GetDictionary(repository, "owner") ?? new Dictionary<string, object>();
         Dictionary<string, object> validation = GetDictionary(repository, "validation") ?? new Dictionary<string, object>();
         Dictionary<string, object> install = GetDictionary(repository, "install") ?? new Dictionary<string, object>();
-        Dictionary<string, object> candidate = GetDictionary(install, "candidate");
+        Dictionary<string, object> candidate = DshmkSelectedCandidate(repository);
         Dictionary<string, object> result = new Dictionary<string, object>
         {
             { "id", GetString(repository, "id") }, { "repositoryId", GetInteger(repository, "repositoryId") },
@@ -2644,7 +2898,7 @@ internal sealed class MainForm : Form
             { "createdAt", GetString(repository, "createdAt") }, { "updatedAt", GetString(repository, "updatedAt") }, { "pushedAt", GetString(repository, "pushedAt") },
             { "projectType", GetString(repository, "projectType") }, { "category", GetString(repository, "category") },
             { "categories", GetRawStringArray(repository, "categories") }, { "defaultBranch", GetString(repository, "defaultBranch") },
-            { "verified", DshmkIsVerified(repository) }, { "installable", DshmkIsInstallable(repository) },
+            { "verified", DshmkIsVerified(repository) }, { "installable", DshmkIsInstallable(repository) }, { "installMode", DshmkInstallMode(repository) },
             { "validation", new Dictionary<string, object>
                 {
                     { "overall", GetString(validation, "overall") }, { "label", GetString(validation, "label") },
@@ -2736,9 +2990,42 @@ internal sealed class MainForm : Form
 
     private static bool DshmkIsInstallable(Dictionary<string, object> repository)
     {
+        return DshmkInstallMode(repository) == "one-click";
+    }
+
+    private static Dictionary<string, object> DshmkSelectedCandidate(Dictionary<string, object> repository)
+    {
         Dictionary<string, object> install = GetDictionary(repository, "install");
+        if (install == null) return null;
         Dictionary<string, object> candidate = GetDictionary(install, "candidate");
-        return candidate != null && GetBoolean(candidate, "executable") && GetRawStringArray(candidate, "args").Length >= 5;
+        if (candidate != null) return candidate;
+        object[] candidates = GetArray(install, "candidates");
+        return candidates != null && candidates.Length == 1 ? candidates[0] as Dictionary<string, object> : null;
+    }
+
+    private static string DshmkInstallMode(Dictionary<string, object> repository)
+    {
+        Dictionary<string, object> install = GetDictionary(repository, "install");
+        if (install == null) return "local";
+        string status = GetString(install, "status");
+        object[] candidates = GetArray(install, "candidates") ?? new object[0];
+        if (string.Equals(status, "ambiguous", StringComparison.OrdinalIgnoreCase) || candidates.Length > 1) return "ambiguous";
+
+        Dictionary<string, object> candidate = DshmkSelectedCandidate(repository);
+        if (candidate == null) return "local";
+        string command = GetString(candidate, "command");
+        string[] args = GetRawStringArray(candidate, "args");
+        if (GetBoolean(candidate, "executable") && args.Length >= 5) return "one-click";
+        return !string.IsNullOrEmpty(command) || args.Length > 0 ? "reference" : "local";
+    }
+
+    private static int DshmkInstallModeRank(Dictionary<string, object> repository)
+    {
+        string mode = DshmkInstallMode(repository);
+        if (mode == "one-click") return 4;
+        if (mode == "reference") return 3;
+        if (mode == "ambiguous") return 2;
+        return 1;
     }
 
     private static int CompareDshmkInteger(Dictionary<string, object> left, Dictionary<string, object> right, string field, string tieField)
@@ -2760,8 +3047,9 @@ internal sealed class MainForm : Form
         Dictionary<string, object> catalog = await LoadDshmkCatalogAsync();
         Dictionary<string, object> repository = FindDshmkRepository(catalog, repositoryId);
         if (repository == null) throw new InvalidOperationException("The DSHMK project is not present in the current catalog snapshot.");
+        if (!DshmkIsInstallable(repository)) throw new InvalidOperationException("This DSHMK project does not have a confirmed one-click installation candidate.");
         Dictionary<string, object> install = GetDictionary(repository, "install");
-        Dictionary<string, object> candidate = GetDictionary(install, "candidate");
+        Dictionary<string, object> candidate = DshmkSelectedCandidate(repository);
         string[] candidateArgs = ValidateDshmkInstallCandidate(repository, candidate);
         string profile = candidateArgs[2];
         string packageSpec = candidateArgs[4];

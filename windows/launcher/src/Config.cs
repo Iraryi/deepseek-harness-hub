@@ -7,6 +7,24 @@ using System.Web.Script.Serialization;
 
 internal static class AppPaths
 {
+    private static string GetCommandLineOption(string name)
+    {
+        string prefix = name + "=";
+        string[] arguments = Environment.GetCommandLineArgs();
+        for (int index = 0; index < arguments.Length; index++)
+        {
+            string argument = arguments[index];
+            if (argument.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return argument.Substring(prefix.Length);
+            if (string.Equals(argument, name, StringComparison.OrdinalIgnoreCase) && index + 1 < arguments.Length)
+                return arguments[index + 1];
+        }
+        return null;
+    }
+
+    public static string CommandLineDataDir { get { return GetCommandLineOption("--dsh-data-dir"); } }
+    public static string CommandLineDshHome { get { return GetCommandLineOption("--dsh-home"); } }
+    public static string CommandLineInstanceScope { get { return GetCommandLineOption("--dsh-instance-scope"); } }
+
     public static string ExeDir
     {
         get
@@ -25,6 +43,8 @@ internal static class AppPaths
     {
         get
         {
+            string commandLineDirectory = CommandLineDataDir;
+            if (!string.IsNullOrWhiteSpace(commandLineDirectory)) return Path.GetFullPath(commandLineDirectory);
             string overrideDirectory = Environment.GetEnvironmentVariable("DEEPSEEK_HARNESS_DATA_DIR");
             if (!string.IsNullOrWhiteSpace(overrideDirectory))
             {
@@ -62,6 +82,8 @@ internal static class AppPaths
     {
         get
         {
+            string commandLineHome = CommandLineDshHome;
+            if (!string.IsNullOrWhiteSpace(commandLineHome)) return Path.GetFullPath(commandLineHome);
             string configured = Environment.GetEnvironmentVariable("DSH_HOME");
             if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured);
             return Path.Combine(DataDir, "dsh");

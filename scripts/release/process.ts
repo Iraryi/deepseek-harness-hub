@@ -26,6 +26,26 @@ export interface CommandResult {
 }
 
 /**
+ * Resolve package-manager command shims before invoking Node child processes.
+ * @param command - executable name supplied by a release step.
+ * @returns The platform-specific executable name.
+ */
+function executableForPlatform(command: string): string {
+  if (process.platform !== 'win32') return command
+  if (command === 'npm' || command === 'npx' || command === 'pnpm') return `${command}.cmd`
+  return command
+}
+
+/**
+ * Whether the command needs the Windows shell to execute its `.cmd` shim.
+ * @param command - executable name supplied by a release step.
+ * @returns True for package-manager shims on Windows.
+ */
+function usesWindowsShell(command: string): boolean {
+  return process.platform === 'win32' && (command === 'npm' || command === 'npx' || command === 'pnpm')
+}
+
+/**
  * Run a command and capture its output without judging the exit status.
  * @param command - executable name.
  * @param args - command arguments.
@@ -33,7 +53,7 @@ export interface CommandResult {
  * @returns The exit status and captured streams.
  */
 export function attempt(command: string, args: readonly string[], options: RunOptions = {}): CommandResult {
-  const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, encoding: 'utf8' })
+  const result = spawnSync(executableForPlatform(command), [...args], { cwd: options.cwd, env: options.env, encoding: 'utf8', shell: usesWindowsShell(command) })
   if (result.error !== undefined) throw result.error
   return { status: result.status, stdout: result.stdout, stderr: result.stderr }
 }
@@ -61,7 +81,7 @@ export function capture(command: string, args: readonly string[], options: RunOp
  * @param options - working directory and environment.
  */
 export function run(command: string, args: readonly string[], options: RunOptions = {}): void {
-  const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, stdio: 'inherit' })
+  const result = spawnSync(executableForPlatform(command), [...args], { cwd: options.cwd, env: options.env, stdio: 'inherit', shell: usesWindowsShell(command) })
   if (result.error !== undefined) throw result.error
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${String(result.status)}`)
 }

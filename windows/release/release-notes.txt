@@ -1,33 +1,19 @@
-# DeepSeek Harness Desktop
+# DeepSeek Harness HUB `v0.1.0-rc.7` — 2026-08-21
 
-This is an unofficial Windows desktop distribution built from the DeepSeek Harness source tree. It provides a native WebView2 window, a separate CONFIG application, a bundled local service runtime, and first-run installation guidance.
+## Update log
 
-## Downloads
+- Refresh DSHMK after the cached first paint instead of leaving the HUB permanently labeled `本机缓存` when the live catalog becomes reachable.
+- Raise the first-party catalog response limit to 32 MiB and give the official DSHMK endpoint a bounded four-minute transfer window; retain the shorter timeout and coverage guard for alternate raw sources.
+- Add live GitHub Stars, repository timestamps, topics, npm version metadata, and a clear `source updated since validation` state to catalog cards and details.
+- Distinguish one-click Setup, installation reference, ambiguous installation plans, and local-build-required projects so unsupported projects no longer present a misleading install action.
+- Preserve cached-first startup, current filters, pagination, scroll position, and open details while a background refresh completes.
+- Keep Full Setup, Lite Setup, Runtime ZIP, Portable ZIP, the PowerShell installer, release manifest, and SHA-256 checksums aligned to the same release version.
 
-- **Full Setup** includes the application Runtime, bundled Node.js, and the Microsoft WebView2 offline installer. This is the recommended package for unreliable or offline networks.
-- **Lite Setup** downloads and verifies the application Runtime during installation. It also supports importing a Runtime ZIP that was downloaded on another computer.
-- **Portable ZIP** keeps configuration and user data beside `dsh.exe`. WebView2 must already be installed.
-- **Runtime ZIP** contains the packaged DeepSeek Harness service and its private Node.js runtime for Setup import or repair.
+## 更新日志
 
-## Installation behavior
-
-Setup detects WebView2, installs it when required, validates the selected Runtime, and opens CONFIG on first use. Full and Lite Setup support standard or portable data, local Runtime ZIP import, an existing Runtime folder, and an advanced source ZIP build mode. Source ZIP builds require Node.js 22.19 or newer and `pnpm` on the build computer.
-
-Uninstall removes the application and packaged Runtime while preserving user-created data.
-
----
-
-这是一个基于 DeepSeek Harness 源码构建的非官方 Windows 桌面发行版，提供原生 WebView2 窗口、独立 CONFIG 程序、内置本地服务 Runtime 和首次运行引导。
-
-## 下载选择
-
-- **Full Setup** 内置应用 Runtime、独立 Node.js 和微软 WebView2 离线安装器，适合网络不稳定或离线安装。
-- **Lite Setup** 在安装时下载并校验应用 Runtime，也能导入从其他电脑下载的 Runtime ZIP。
-- **Portable ZIP** 把设置与用户数据保存在 `dsh.exe` 旁边；电脑需要已经安装 WebView2。
-- **Runtime ZIP** 包含打包后的 DeepSeek Harness 服务及其私有 Node.js，可用于安装程序导入或修复。
-
-## 安装行为
-
-安装程序会检测 WebView2、按需安装、校验所选 Runtime，并在首次使用时先打开 CONFIG。Full 与 Lite 安装包都支持标准数据、便携数据、本地 Runtime ZIP、已有 Runtime 文件夹，以及高级的源码 ZIP 构建模式。源码 ZIP 构建要求电脑已有 Node.js 22.19 或更高版本和 `pnpm`。
-
-卸载会移除程序和打包 Runtime，但保留用户创建的数据。
+- 首屏先使用缓存，同时在在线目录可达后刷新 DSHMK；不再因为在线刷新较晚而永久显示“本机缓存”。
+- 将第一方目录响应上限提高到 32 MiB，并为官方 DSHMK 端点提供有界的四分钟传输窗口；备用 raw 来源继续使用较短超时和覆盖量保护。
+- 在目录卡片和详情页显示实时 GitHub Star、仓库时间、Topics、npm 版本元数据，并明确标识“源码在验证后更新”。
+- 区分“一键 SETUP”“安装参考”“安装方案不明确”和“需要本地构建”，不再给不支持的项目显示具有误导性的安装按钮。
+- 在线刷新完成时保留缓存首屏、当前筛选、页码、滚动位置和已打开的详情。
+- Full、Lite、Runtime ZIP、Portable ZIP、PowerShell 安装器、Release manifest 与 SHA-256 校验文件统一使用同一版本号。

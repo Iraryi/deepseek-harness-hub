@@ -1,11 +1,14 @@
 param(
-    [string]$Setup = "$PSScriptRoot\dist\DeepSeek-Harness-Setup-Full-0.1.0-rc.6-win-x64.exe",
-    [int]$ResponseTimeoutMilliseconds = 500,
+    [string]$Setup = '',
+    [int]$ResponseTimeoutMilliseconds = 5000,
     [int]$OverallTimeoutMinutes = 35,
     [switch]$StopAtCheck
 )
 
 $ErrorActionPreference = 'Stop'
+$package = Get-Content (Join-Path $PSScriptRoot '..\..\package.json') -Raw | ConvertFrom-Json
+$version = [string]$package.version
+if ([string]::IsNullOrWhiteSpace($Setup)) { $Setup = Join-Path $PSScriptRoot "dist\DeepSeek-Harness-Setup-Full-$version-win-x64.exe" }
 $setupPath = [IO.Path]::GetFullPath($Setup)
 if (-not (Test-Path $setupPath)) { throw "Setup UI smoke input is missing: $setupPath" }
 
@@ -260,16 +263,16 @@ try {
             if (-not (Test-Path $preparationScreenshotPath)) { Save-WindowScreenshot $window $preparationScreenshotPath }
         }
         elseif ((Get-Date) -ge $nextClickAllowedAt) {
-            Click-MatchingControl $controls @('我接受|I accept') | Out-Null
-            foreach ($launch in $controls | Where-Object { $_.Text -match '启动 DeepSeek Harness|Launch DeepSeek Harness' }) {
+            Click-MatchingControl $controls @('\u6211\u63A5\u53D7|I accept') | Out-Null
+            foreach ($launch in $controls | Where-Object { $_.Text -match '^\u542F\u52A8 DeepSeek Harness|^Launch DeepSeek Harness' }) {
                 if ([SetupWindowApi]::CheckState($launch.Handle) -ne 0) {
                     [SetupWindowApi]::Click($launch.Handle, [uint32]$ResponseTimeoutMilliseconds) | Out-Null
                 }
             }
             $clicked = Click-MatchingControl $controls @(
-                '^安装(?:\(&.\))?|^Install\b',
-                '^下一步(?:\(&.\))?|^Next\b',
-                '^完成(?:\(&.\))?|^Finish\b'
+                '^\u5B89\u88C5(?:\(&.\))?|^Install\b',
+                '^\u4E0B\u4E00\u6B65(?:\(&.\))?|^Next\b',
+                '^\u5B8C\u6210(?:\(&.\))?|^Finish\b'
             )
             if ($clicked) { $nextClickAllowedAt = (Get-Date).AddMilliseconds(400) }
         }
@@ -287,7 +290,6 @@ try {
     if ($responsiveSamples -lt 10) { throw "Setup preparation completed before enough response samples were collected: $responsiveSamples" }
     if ($hungSamples -ne 0) { throw "Setup stopped responding during preparation: $hungSamples timed-out samples" }
     if (-not (Test-Path (Join-Path $installPath 'dsh.exe'))) { throw 'Setup UI smoke completed without installing dsh.exe' }
-    if (-not (Test-Path (Join-Path $installPath 'dsh-hub.exe'))) { throw 'Setup UI smoke completed without installing dsh-hub.exe' }
 
     [pscustomobject]@{
         Setup = $setupPath

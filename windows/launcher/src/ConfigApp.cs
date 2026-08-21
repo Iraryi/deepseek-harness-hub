@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Reflection;
+using System.Text;
 using System.Windows.Forms;
 
 internal static class ConfigProgram
@@ -2168,8 +2170,24 @@ internal sealed class ConfigForm : Form
         {
             string main = Path.Combine(AppPaths.ExeDir, _hubConfigMode ? "dsh-hub.exe" : "dsh.exe");
             if (!File.Exists(main)) return;
+            string dataDirectory = AppPaths.DataDir;
+            string dshHome = AppPaths.DshHome;
+            string instanceScope = Environment.GetEnvironmentVariable("DEEPSEEK_HARNESS_INSTANCE_SCOPE");
+            StringBuilder arguments = new StringBuilder();
+            arguments.Append("--dsh-data-dir ").Append(QuoteCommandLineArgument(dataDirectory));
+            arguments.Append(" --dsh-home ").Append(QuoteCommandLineArgument(dshHome));
+            if (!string.IsNullOrWhiteSpace(instanceScope))
+                arguments.Append(" --dsh-instance-scope ").Append(QuoteCommandLineArgument(instanceScope));
+
+            string handoffDirectory = Path.Combine(Path.GetTempPath(), "DeepSeekHarness", "handoff");
+            Directory.CreateDirectory(handoffDirectory);
+            CleanupOldHandoffShortcuts(handoffDirectory);
+            string shortcutPath = Path.Combine(handoffDirectory,
+                "launch-" + Guid.NewGuid().ToString("N") + ".lnk");
+            CreateShellShortcut(shortcutPath, main, arguments.ToString(), AppPaths.ExeDir);
+
             ProcessStartInfo startInfo = new ProcessStartInfo("explorer.exe");
-            startInfo.Arguments = "\"" + main.Replace("\"", "\\\"") + "\"";
+            startInfo.Arguments = QuoteCommandLineArgument(shortcutPath);
             startInfo.UseShellExecute = true;
             Process.Start(startInfo);
         }
@@ -2177,6 +2195,72 @@ internal sealed class ConfigForm : Form
         {
             MessageBox.Show((_cfg.Language == "zh-CN" ? "启动失败：" : "Launch failed: ") + ex.Message,
                 "CONFIG", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private static string QuoteCommandLineArgument(string value)
+    {
+        if (value == null) return "\"\"";
+        StringBuilder quoted = new StringBuilder();
+        quoted.Append('"');
+        int backslashes = 0;
+        foreach (char character in value)
+        {
+            if (character == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+            if (character == '"')
+            {
+                quoted.Append(new string('\\', backslashes * 2 + 1));
+                quoted.Append('"');
+                backslashes = 0;
+                continue;
+            }
+            if (backslashes > 0)
+            {
+                quoted.Append(new string('\\', backslashes));
+                backslashes = 0;
+            }
+            quoted.Append(character);
+        }
+        quoted.Append(new string('\\', backslashes * 2));
+        quoted.Append('"');
+        return quoted.ToString();
+    }
+
+    private static void CreateShellShortcut(string shortcutPath, string targetPath, string arguments, string workingDirectory)
+    {
+        Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+        if (shellType == null) throw new InvalidOperationException("Windows Shell shortcut support is unavailable.");
+        object shell = Activator.CreateInstance(shellType);
+        object shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell,
+            new object[] { shortcutPath });
+        Type shortcutType = shortcut.GetType();
+        shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut,
+            new object[] { targetPath });
+        shortcutType.InvokeMember("Arguments", BindingFlags.SetProperty, null, shortcut,
+            new object[] { arguments });
+        shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut,
+            new object[] { workingDirectory });
+        shortcutType.InvokeMember("WindowStyle", BindingFlags.SetProperty, null, shortcut,
+            new object[] { 1 });
+        shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
+    }
+
+    private static void CleanupOldHandoffShortcuts(string directory)
+    {
+        try
+        {
+            foreach (string path in Directory.GetFiles(directory, "launch-*.lnk"))
+            {
+                if (File.GetLastWriteTimeUtc(path) < DateTime.UtcNow.AddMinutes(-10))
+                    File.Delete(path);
+            }
+        }
+        catch
+        {
         }
     }
 }

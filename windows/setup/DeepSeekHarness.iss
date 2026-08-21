@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.1.0-rc.6"
+  #define AppVersion "0.1.0-rc.7"
 #endif
 #ifndef AppNumericVersion
   #define AppNumericVersion "0.1.0.5"
@@ -340,13 +340,10 @@ chinesesimp.LaunchAfterInstall=启动 DeepSeek Harness（首次使用先打开 C
 
 [Files]
 Source: "{#LauncherDir}\dsh.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#LauncherDir}\dsh-hub.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherDir}\dsh-config.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherDir}\Microsoft.Web.WebView2.Core.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherDir}\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherDir}\WebView2Loader.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#LauncherDir}\community-registry.json"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#LauncherDir}\dshmk-catalog.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherDir}\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "install-runtime.ps1"; Flags: dontcopy noencryption
 Source: "seed-config.ps1"; Flags: dontcopy noencryption
@@ -364,7 +361,6 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Icons]
 Name: "{group}\DeepSeek Harness"; Filename: "{app}\dsh.exe"; WorkingDir: "{app}"
-Name: "{group}\HUB"; Filename: "{app}\dsh-hub.exe"; WorkingDir: "{app}"
 Name: "{group}\CONFIG"; Filename: "{app}\dsh-config.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\DeepSeek Harness"; Filename: "{app}\dsh.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 

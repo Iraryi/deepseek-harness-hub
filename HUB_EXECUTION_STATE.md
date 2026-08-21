@@ -13,9 +13,28 @@ This file is the mandatory operational ledger for work governed by [HUB_REQUIREM
 
 ## Current checkpoint
 
-Status date: 2026-08-17
+Status date: 2026-08-21
 
-This checkpoint is active. A clean virtual-machine installation exposed release-blocking regressions that prior development-profile and large-window checks did not cover. Work continues until the clean-install VM regression gate in `HUB_REQUIREMENTS.md` passes and a new local Full/Lite Setup pair is built. GitHub upload is not authorized during this checkpoint.
+This checkpoint is complete for the `v0.1.0-rc.7` release candidate. The clean-install regression gate was rerun with isolated data and process scopes, the new Full/Lite Setup pair was built, and GitHub publication is authorized. Preserve `v0.1.0-rc.6`; publish `v0.1.0-rc.7` as a new release.
+
+## Final rc.7 release checkpoint — 2026-08-21
+
+- Fixed CONFIG `Save & Launch` handoff. Explorer no longer receives application arguments as if they were filesystem paths; CONFIG creates a temporary Windows Shell shortcut containing the exact data directory, `DSH_HOME`, and instance scope, then asks Explorer to launch that shortcut.
+- The handoff smoke now proves all three required properties: Desktop starts only after CONFIG closes, the test-directory `dsh.exe` receives the isolated paths, and the detached Desktop survives the outer Job shutdown without an access-denied startup.
+- Rebuilt Launcher, Runtime, Full Setup, and Lite Setup. The complete release pipeline passed window-mode geometry for `window`, `bordered`, `borderless`, and `exclusive`, first-run handoff, service gates, DSHMK installation, Setup installation/upgrade/uninstall/reinstall, portable HTTP, and packaged-runtime checks.
+- Corrected `windows/setup/smoke-ui.ps1` so its default native-control response timeout is 5 seconds and its bilingual button matching is encoding-independent. The UI smoke passes without a false regex parse failure or a premature `BM_CLICK` timeout.
+- Final release output: `windows/release/dist-rc7`.
+- Full Setup: `342,469,092` bytes, SHA-256 `f4e216b0d1b23542433dc0971fdab10256d79420e2dde70709b840a4e8d39d68`.
+- Lite Setup: `4,056,437` bytes, SHA-256 `5d47be798b27628d27011dcba34443443a33a9ee1b0a5e381349af95edcb1d17`.
+- Runtime ZIP: `127,452,724` bytes, SHA-256 `d83e9bb72dea5c260fca63162ec3f19a54156dc43bf6cdcba0ac530f47152f85`.
+- Portable ZIP: `129,687,457` bytes, SHA-256 `e651f4074b10ffa1e09abdb077971b5b531b5c8abe0865d2a37d4d0f4d336cf4`.
+- `release-manifest.json` and `SHA256SUMS.txt` were generated from the same assets; the release notes contain only the rc.7 update log and bilingual update entries.
+
+## DSHMK live-provenance repair checkpoint — 2026-08-21
+
+- The installed HUB's `本机缓存` badge was traced to a real native fallback, not a rendering-only error. The live DSHMK catalog is currently about 18 MiB and the launcher rejected it under the old 16 MiB limit; the 16-second request also expired while transferring it. The alternate raw catalog was correctly rejected by the coverage guard because it exposed a much smaller repository and one-click candidate set.
+- The Launcher now accepts up to 32 MiB for the DSHMK catalog and gives `dshmk.com` a bounded four-minute transfer window, while keeping the alternate raw path at 45 seconds. Cached data still paints immediately, but a successful background refresh emits `dsh-hub-catalog-updated`; the HUB page re-requests its current view and changes the provenance badge to live without resetting the user's state.
+- This checkpoint is an intentional release build. The new Full/Lite Setup pair, Runtime, Portable archive, checksums, and release manifest must be verified before publishing `v0.1.0-rc.7`; the prior `v0.1.0-rc.6` release remains intact.
 
 ## Active clean-install VM regression checkpoint
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-rc.7 — 2026-08-21
+
+- Refresh DSHMK live metadata after cached first paint, with a 32 MiB first-party catalog limit and bounded four-minute official transfer window.
+- Show live GitHub and npm provenance in HUB cards and details, including source changes after validation.
+- Separate one-click Setup, installation references, ambiguous plans, and local-build-required projects in the UI and filters.
+- Preserve pagination, filters, scroll position, and open details when the background catalog refresh completes.
+- Rebuild and verify the Full/Lite Setup pair, Runtime, Portable archive, release manifest, and SHA-256 checksums as one release set.
+
 ## 0.1.0-rc.6 — 2026-08-18
 
 - Move the complete, buildable HUB implementation into this repository instead of delegating source ownership to the Desktop repository.

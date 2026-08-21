@@ -23,7 +23,10 @@ const repositoryManifest = JSON.parse(readFileSync(join(root, 'package.json'), '
 const cli = workspace.get('@deepseek-ai/dsh')
 if (cli === undefined) throw new Error('apps/cli/package.json is missing from the workspace package map')
 
-const runtimeDependencies = new Set(['@deepseek-ai/dsh'])
+const runtimeDependencies = new Set([
+  '@deepseek-ai/dsh',
+  '@deepseek-ai/dsh-client-ui-setup-hub',
+])
 for (const dependency of Object.keys({ ...cli.dependencies, ...cli.optionalDependencies })) {
   if (workspace.has(dependency)) runtimeDependencies.add(dependency)
 }

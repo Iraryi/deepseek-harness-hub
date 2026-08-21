@@ -1,11 +1,15 @@
 param(
-    [string]$FullSetup = "$PSScriptRoot\dist\DeepSeek-Harness-Setup-Full-0.1.0-rc.6-win-x64.exe",
-    [string]$LiteSetup = "$PSScriptRoot\dist\DeepSeek-Harness-Setup-Lite-0.1.0-rc.6-win-x64.exe",
+    [string]$FullSetup = '',
+    [string]$LiteSetup = '',
     [string]$RuntimeArchive = "$PSScriptRoot\..\runtime\dist\DeepSeek-Harness-Runtime-win-x64.zip",
     [switch]$KeepArtifactsOnFailure
 )
 
 $ErrorActionPreference = 'Stop'
+$package = Get-Content (Join-Path $PSScriptRoot '..\..\package.json') -Raw | ConvertFrom-Json
+$version = [string]$package.version
+if ([string]::IsNullOrWhiteSpace($FullSetup)) { $FullSetup = Join-Path $PSScriptRoot "dist\DeepSeek-Harness-Setup-Full-$version-win-x64.exe" }
+if ([string]::IsNullOrWhiteSpace($LiteSetup)) { $LiteSetup = Join-Path $PSScriptRoot "dist\DeepSeek-Harness-Setup-Lite-$version-win-x64.exe" }
 $dist = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'dist'))
 $full = [IO.Path]::GetFullPath($FullSetup)
 $lite = [IO.Path]::GetFullPath($LiteSetup)
@@ -389,7 +393,7 @@ try {
     Set-SmokeLocalAppData $fullLocal
     $fullInstallLog = Join-Path $testRootPath 'full-install.log'
     Invoke-Setup $full $fullApp 'chinesesimp' '' '' '' $fullInstallLog
-    foreach ($launcherName in @('dsh.exe', 'dsh-hub.exe', 'dsh-config.exe')) {
+    foreach ($launcherName in @('dsh.exe', 'dsh-config.exe')) {
         if (-not (Test-Path (Join-Path $fullApp $launcherName))) {
             throw "Full Setup did not install $launcherName"
         }
@@ -472,7 +476,7 @@ try {
     Set-SmokeLocalAppData $liteLocal
     $liteInstallLog = Join-Path $testRootPath 'lite-install.log'
     Invoke-Setup $lite $liteApp 'english' 'portable' 'archive' $runtime $liteInstallLog
-    foreach ($launcherName in @('dsh.exe', 'dsh-hub.exe', 'dsh-config.exe')) {
+    foreach ($launcherName in @('dsh.exe', 'dsh-config.exe')) {
         if (-not (Test-Path (Join-Path $liteApp $launcherName))) {
             throw "Lite Setup did not install $launcherName"
         }

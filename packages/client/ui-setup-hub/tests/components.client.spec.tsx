@@ -46,9 +46,9 @@ const communityRegistry = {
 const dshmkProject = {
   categories: ['ui'], category: 'ui', createdAt: '2026-08-01T00:00:00Z', defaultBranch: 'main', description: 'DSHMK project', forks: 3,
   fullName: 'example/dshmk-project', homepage: '', id: '101', install: {
-    candidate: { command: 'dsh plugin --profile web add example-dshmk', executable: true, source: 'npm', target: 'example-dshmk' },
+    candidate: { args: ['plugin', '--profile', 'web', 'add', 'example-dshmk'], command: 'dsh plugin --profile web add example-dshmk', executable: true, source: 'npm', target: 'example-dshmk' },
     candidates: [], status: 'ready',
-  }, installable: true, language: 'TypeScript', license: 'MIT', name: 'dshmk-project', openIssues: 1,
+  }, installable: true, installMode: 'one-click' as const, language: 'TypeScript', license: 'MIT', name: 'dshmk-project', openIssues: 1,
   owner: { avatarUrl: 'https://github.com/example.png?size=96', login: 'example' }, projectType: 'plugin', pushedAt: '2026-08-15T00:00:00Z',
   repositoryId: 101, stars: 120, topics: ['deepseek-harness'], updatedAt: '2026-08-15T00:00:00Z', url: 'https://github.com/example/dshmk-project',
   validation: { dshVersion: '>=0.1.0', eligible: true, label: 'Verified', level: 3, overall: 'verified', platform: 'web', reason: '', sourceSha: '1234567890123456789012345678901234567890', stages: { source: { status: 'passed' } }, tone: 'success', updatedAt: '2026-08-15T00:00:00Z', validatorVersion: '1', verified: true }, verified: true,
@@ -57,6 +57,24 @@ const dshmkProject = {
 const dshmkCatalog = {
   categories: [{ count: 1, id: 'ui' }], generatedAt: '2026-08-16T16:07:23Z', items: [dshmkProject], page: 1, pageSize: 24,
   projectTypes: [{ count: 1, id: 'plugin' }], sourceMode: 'bundled' as const, sourceUrl: 'https://dshmk.com/catalog.json', total: 1, totalPages: 1,
+}
+
+const dshmkReferenceProject = {
+  ...dshmkProject, id: '102', installable: false, installMode: 'reference' as const, name: 'reference-project', repositoryId: 102,
+  install: { candidate: { args: ['plugin', '--profile', 'web', 'add', 'reference-project'], command: 'dsh plugin --profile web add reference-project', executable: false, source: 'readme', target: 'reference-project' }, candidates: [], status: 'recognized' },
+}
+
+const dshmkAmbiguousProject = {
+  ...dshmkProject, id: '103', installable: false, installMode: 'ambiguous' as const, name: 'ambiguous-project', repositoryId: 103,
+  install: { candidate: {}, candidates: [
+    { args: ['plugin', '--profile', 'web', 'add', 'candidate-a'], command: 'dsh plugin --profile web add candidate-a', executable: true, source: 'readme', target: 'candidate-a' },
+    { args: ['plugin', '--profile', 'web', 'add', 'candidate-b'], command: 'dsh plugin --profile web add candidate-b', executable: true, source: 'readme', target: 'candidate-b' },
+  ], status: 'ambiguous' },
+}
+
+const dshmkLocalProject = {
+  ...dshmkProject, id: '104', installable: false, installMode: 'local' as const, name: 'local-project', repositoryId: 104,
+  install: { candidate: {}, candidates: [], status: 'unavailable' },
 }
 
 function hubRequest(responses: Readonly<Record<string, unknown>> = {}) {
@@ -129,7 +147,17 @@ describe('SetupHubSettingsTab', () => {
   it('presents native CONFIG and Desktop exits on the dedicated HUB surface', async () => {
     const openConfig = vi.fn()
     const leaveHub = vi.fn()
-    const requestHub = hubRequest({ 'community-registry': communityRegistry, 'github-search': [] })
+    const requestHub = hubRequest({
+      'community-registry': communityRegistry,
+      'dshmk-live-metadata': {
+        '101': {
+          fetchedAt: '2026-08-21T00:00:00.000Z', githubStars: 135, githubUpdatedAt: '2026-08-20T00:00:00Z',
+          githubPushedAt: '2026-08-20T00:00:00Z', npmPackage: 'example-dshmk', npmVersion: '1.2.3', status: 'fresh',
+          validationStale: true,
+        },
+      },
+      'github-search': [],
+    })
     render(<SetupHubDesktopSurface {...runtimeProps} desktopAvailable list={async () => ({ schemaVersion: 1, generatedAt: '2026-08-15T00:00:00.000Z', source: 'https://example.com', entries: [{ manifest, metrics: {} }] })} install={async () => 'ok'} requestHub={requestHub} openConfig={openConfig} leaveHub={leaveHub} t={t} />)
 
     await screen.findByRole('heading', { name: zh.homeTitle })
@@ -138,7 +166,10 @@ describe('SetupHubSettingsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: zh.navGitHub }))
     await screen.findByRole('heading', { name: zh.githubTitle })
     await waitFor(() => { expect(requestHub).toHaveBeenCalledWith('dshmk-catalog', expect.objectContaining({ page: 1, pageSize: 24 })) })
+    await waitFor(() => { expect(requestHub).toHaveBeenCalledWith('dshmk-live-metadata', { repositoryIds: [101] }) })
     expect(await screen.findByText('dshmk-project')).toBeTruthy()
+    await waitFor(() => { expect(screen.getByText(/135/)).toBeTruthy() })
+    await waitFor(() => { expect(screen.getByText(zh.sourceUpdatedSinceValidation)).toBeTruthy() })
     expect(screen.getByText('Aug 16, 2026')).toBeTruthy()
     fireEvent.click(screen.getByRole('tab', { name: zh.curatedDiscovery }))
     await waitFor(() => { expect(requestHub).toHaveBeenCalledWith('community-registry') })
@@ -351,10 +382,31 @@ describe('SetupHubSettingsTab', () => {
     expect(within(filterDialog).getByText(zh.validationFilter)).toBeTruthy()
     expect(within(filterDialog).getByRole('button', { name: zh.searchTags })).toBeTruthy()
     expect(within(filterDialog).getByRole('button', { name: zh.installableOnly })).toBeTruthy()
+    expect(within(filterDialog).getByRole('button', { name: zh.referenceOnly })).toBeTruthy()
+    expect(within(filterDialog).getByRole('button', { name: zh.ambiguousOnly })).toBeTruthy()
     expect(within(filterDialog).getByRole('button', { name: zh.localBuildOnly })).toBeTruthy()
     fireEvent.click(within(filterDialog).getByRole('button', { name: `48 / ${zh.page}` }))
     await waitFor(() => { expect(requestHub).toHaveBeenCalledWith('hub-save-preferences', { pageSize: 48 }) })
     await waitFor(() => { expect(requestHub).toHaveBeenCalledWith('dshmk-catalog', expect.objectContaining({ page: 1, pageSize: 48 })) })
+  })
+
+  it('distinguishes one-click, reference, ambiguous, and local DSHMK plans', async () => {
+    const catalog = { ...dshmkCatalog, items: [dshmkProject, dshmkReferenceProject, dshmkAmbiguousProject, dshmkLocalProject], total: 4 }
+    const requestHub = hubRequest({ 'dshmk-catalog': catalog })
+    render(<SetupHubDesktopSurface {...runtimeProps} desktopAvailable list={async () => ({ schemaVersion: 1, generatedAt: '2026-08-15T00:00:00.000Z', source: 'https://example.com', entries: [] })} install={async () => 'ok'} requestHub={requestHub} openConfig={() => {}} leaveHub={() => {}} t={t} />)
+
+    await screen.findByRole('heading', { name: zh.homeTitle })
+    fireEvent.click(screen.getByRole('button', { name: zh.navGitHub }))
+    expect(await screen.findByText('reference-project')).toBeTruthy()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.oneClickSetup }).disabled).toBe(false)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.referenceSetup }).disabled).toBe(true)
+    expect(screen.getAllByRole<HTMLButtonElement>('button', { name: zh.ambiguousSetup }).some(button => button.disabled)).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: zh.localBuildRequired }).disabled).toBe(true)
+
+    const referenceCard = screen.getByText('reference-project').closest('article')!
+    fireEvent.click(within(referenceCard).getByRole('button', { name: zh.details }))
+    expect(await screen.findByRole('dialog', { name: 'reference-project' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh.copyInstallReference })).toBeTruthy()
   })
 
   it('shows native progress, forwards cancellation, and restores install actions after failure', async () => {

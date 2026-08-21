@@ -2460,6 +2460,7 @@
 }
 
 .dshmkEvidenceRow span[data-verified='true'] { background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, var(--dsw-alias-bg-layer-2)); color: var(--dsw-alias-state-success-primary); }
+.dshmkEvidenceRow .dshmkLiveMeta[data-status='stale'] { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 11%, var(--dsw-alias-bg-layer-2)); color: var(--dsw-alias-state-warn-primary); }
 .dshmkCard .communityActions {
   flex-wrap: wrap;
   align-items: stretch;
@@ -2556,12 +2557,36 @@
 .dshmkMetricGrid span { color: var(--dsw-alias-label-tertiary); font-size: 9px; }
 .dshmkMetricGrid strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
+.dshmkLiveMetadata {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.dshmkLiveMetadata > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dshmkLiveMetadata h3 { margin: 0; font-size: 12px; }
+.dshmkLiveMetadata > header span { border-radius: 999px; padding: 3px 8px; background: var(--dsw-alias-state-success-tertiary); color: var(--dsw-alias-state-success-primary); font-size: 9px; font-weight: 700; }
+.dshmkLiveMetadata[data-status='partial'] > header span { background: var(--dsw-alias-state-warn-tertiary); color: var(--dsw-alias-state-warn-primary); }
+.dshmkLiveMetadata[data-status='unavailable'] > header span { background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-tertiary); }
+.dshmkLiveMetadataGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.dshmkLiveMetadataGrid > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; border-radius: 10px; padding: 9px 10px; background: var(--dsw-alias-bg-layer-2); }
+.dshmkLiveMetadataGrid span,
+.dshmkLiveMetadata small { color: var(--dsw-alias-label-tertiary); font-size: 9px; line-height: 14px; }
+.dshmkLiveMetadataGrid strong { overflow: hidden; color: var(--dsw-alias-label-primary); font-size: 10px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.dshmkLiveMetadata p { margin: 0; border-radius: 9px; padding: 8px 10px; background: var(--dsw-alias-state-warn-tertiary); color: var(--dsw-alias-state-warn-primary); font-size: 10px; line-height: 16px; }
+
 .installReference { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; border: 1px solid color-mix(in srgb, var(--dsw-alias-state-success-primary) 25%, var(--dsw-alias-border-l2)); border-radius: 14px; padding: 14px; background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 7%, var(--dsw-alias-bg-layer-1)); }
 .installReference > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .installReference span,
 .installReference small { color: var(--dsw-alias-label-tertiary); font-size: 9px; }
 .installReference strong { font-size: 10px; }
 .installReference code { overflow: auto; border-radius: 9px; padding: 10px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); font: 10px/16px Consolas, 'Courier New', monospace; white-space: nowrap; }
+.installReference button { align-self: flex-start; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 5px 9px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary); font: inherit; font-size: 9px; cursor: pointer; }
 
 .dshmkDetailColumns { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(260px, .8fr); gap: 14px; }
 .dshmkDetailColumns > section,
@@ -2816,6 +2841,7 @@
   .dshmkDetailLead { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
   .dshmkDetailLead button { justify-content: center; }
   .dshmkMetricGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dshmkLiveMetadataGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .setupStages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -2859,6 +2885,7 @@
   .manualDownloadList footer button { flex: 1 1 120px; }
   .dshmkDetailHeader > div:last-child a { display: none; }
   .dshmkMetricGrid,
+  .dshmkLiveMetadataGrid,
   .relatedProjects > div { grid-template-columns: minmax(0, 1fr); }
   .setupBackdrop { padding: 8px; }
   .setupProgressSurface { max-height: calc(100vh - 16px); border-radius: 16px; }

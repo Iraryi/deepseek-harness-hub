@@ -111,6 +111,25 @@ export interface HubDshmkInstallCandidate {
   readonly target?: string
 }
 
+/** Native installation decision for a DSHMK project. */
+export type HubDshmkInstallMode = 'one-click' | 'reference' | 'ambiguous' | 'local'
+
+/** Live metadata fetched after the DSHMK validation snapshot. */
+export interface HubDshmkLiveMetadata {
+  readonly error?: string
+  readonly fetchedAt?: string
+  readonly githubPushedAt?: string
+  readonly githubStars?: number
+  readonly githubTopics?: readonly string[]
+  readonly githubUpdatedAt?: string
+  readonly npmPackage?: string
+  readonly npmPublishedAt?: string
+  readonly npmUpdatedAt?: string
+  readonly npmVersion?: string
+  readonly status: 'fresh' | 'partial' | 'unavailable'
+  readonly validationStale?: boolean
+}
+
 /** Project summary returned by the native paginated DSHMK bridge. */
 export interface HubDshmkProject {
   readonly categories: readonly string[]
@@ -131,8 +150,10 @@ export interface HubDshmkProject {
     readonly status: string
   }
   readonly installable: boolean
+  readonly installMode?: HubDshmkInstallMode
   readonly language: string
   readonly license: string
+  readonly liveMetadata?: HubDshmkLiveMetadata
   readonly matchedTopics?: readonly string[]
   readonly name: string
   readonly openIssues: number
@@ -271,6 +292,7 @@ export type HubOperation =
   | 'hub-snapshot'
   | 'dshmk-catalog'
   | 'dshmk-detail'
+  | 'dshmk-live-metadata'
   | 'dshmk-install'
   | 'setup-cancel'
   | 'setup-manual-import'
@@ -384,6 +406,21 @@ export function requestHubThroughDesktop<T>(
     webview.addEventListener('message', onMessage)
     webview.postMessage({ type: 'dsh-hub-request', requestId, operation, payload })
   })
+}
+
+/**
+ * Subscribe to native notifications that replace a cached DSHMK page with a live response.
+ * @param listener - callback invoked after the native catalog cache has been refreshed.
+ * @returns a disposer for the WebView message listener.
+ */
+export function subscribeHubCatalogUpdates(listener: () => void): () => void {
+  const webview = (window as SetupBridgeWindow).chrome?.webview
+  if (webview === undefined) return () => undefined
+  const onMessage = (event: WebViewMessageEvent): void => {
+    if (isRecord(event.data) && event.data.type === 'dsh-hub-catalog-updated') listener()
+  }
+  webview.addEventListener('message', onMessage)
+  return () => { webview.removeEventListener('message', onMessage) }
 }
 
 function readInstallProgress(value: Record<string, unknown>): HubInstallProgress | undefined {

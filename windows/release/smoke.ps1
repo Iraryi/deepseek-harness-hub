@@ -51,7 +51,6 @@ try {
 
     $required = @(
         'dsh.exe',
-        'dsh-hub.exe',
         'dsh-config.exe',
         'portable.mode',
         'runtime\runtime-manifest.json',

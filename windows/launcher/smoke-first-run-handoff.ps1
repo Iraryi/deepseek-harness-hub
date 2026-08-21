@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$AppDirectory
+    [string]$AppDirectory,
+    [string]$RuntimeDirectory = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,11 +18,18 @@ $compiler = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 function Stop-TestProcesses {
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         $_.ExecutablePath -and $_.ExecutablePath.StartsWith($testApp + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
-    } | ForEach-Object { & taskkill.exe /PID $_.ProcessId /T /F 2>$null | Out-Null }
+    } | ForEach-Object {
+        try { & taskkill.exe /PID $_.ProcessId /T /F 2>$null | Out-Null } catch { }
+    }
 }
 
 New-Item -ItemType Directory -Path $testApp -Force | Out-Null
 Copy-Item -Path (Join-Path $sourceApp '*') -Destination $testApp -Recurse -Force
+if (-not [string]::IsNullOrWhiteSpace($RuntimeDirectory)) {
+    $runtimeSource = [IO.Path]::GetFullPath($RuntimeDirectory)
+    if (-not (Test-Path -LiteralPath $runtimeSource -PathType Container)) { throw "RuntimeDirectory does not exist: $runtimeSource" }
+    Copy-Item -Path $runtimeSource -Destination (Join-Path $testApp 'runtime') -Recurse -Force
+}
 New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
 New-Item -ItemType File -Path (Join-Path $testApp 'portable.mode') -Force | Out-Null
 $config = '{"ResolutionWidth":1024,"ResolutionHeight":768,"Language":"zh-CN","FirstRunCompleted":false,"LaunchMode":"window","Url":"http://127.0.0.1:3080","Port":3080,"NodePath":"","RepoPath":"","ToolbarAutoHide":true,"ToolbarEdgeReveal":false,"ToolbarHotkey":"F8","FullscreenHotkey":"F11","LoadingStyle":"minimal","CloseAction":"exit","ShowTrayButton":true,"FullscreenShowToolbar":false,"FullscreenShowTaskbar":false,"EnableExtensions":false,"Extensions":[],"InjectCss":"","InjectJs":"","DevTools":false,"ExternalLinksInBrowser":true}'
