@@ -54,6 +54,14 @@ const dshmkProject = {
   validation: { dshVersion: '>=0.1.0', eligible: true, label: 'Verified', level: 3, overall: 'verified', platform: 'web', reason: '', sourceSha: '1234567890123456789012345678901234567890', stages: { source: { status: 'passed' } }, tone: 'success', updatedAt: '2026-08-15T00:00:00Z', validatorVersion: '1', verified: true }, verified: true,
 }
 
+const dshmkUnpinnedProject = {
+  ...dshmkProject, id: '105', installMode: 'one-click-unpinned' as const, name: 'unpinned-project', repositoryId: 105,
+  fullName: 'example/unpinned-project', install: {
+    candidate: { args: ['plugin', '--profile', 'web', 'add', 'github:example/unpinned-project'], command: 'dsh plugin --profile web add github:example/unpinned-project', executable: true, source: 'github', target: 'example/unpinned-project' },
+    candidates: [], status: 'recognized',
+  }, validation: { ...dshmkProject.validation, overall: 'capability-pending', sourceSha: '', verified: false },
+}
+
 const dshmkCatalog = {
   categories: [{ count: 1, id: 'ui' }], generatedAt: '2026-08-16T16:07:23Z', items: [dshmkProject], page: 1, pageSize: 24,
   projectTypes: [{ count: 1, id: 'plugin' }], sourceMode: 'bundled' as const, sourceUrl: 'https://dshmk.com/catalog.json', total: 1, totalPages: 1,
@@ -409,6 +417,29 @@ describe('SetupHubSettingsTab', () => {
     expect(screen.getByRole('button', { name: zh.copyInstallReference })).toBeTruthy()
   })
 
+  it('requires confirmation before installing an unpinned GitHub project', async () => {
+    const catalog = { ...dshmkCatalog, items: [dshmkUnpinnedProject], total: 1 }
+    const requestHub = hubRequest({
+      'dshmk-catalog': catalog,
+      'dshmk-install': { activeBundles: ['unpinned-project'], message: 'installed', packageNames: ['unpinned-project'], profile: 'web' },
+    })
+    render(<SetupHubDesktopSurface {...runtimeProps} desktopAvailable list={async () => ({ schemaVersion: 1, generatedAt: '2026-08-15T00:00:00.000Z', source: 'https://example.com', entries: [] })} install={async () => 'ok'} requestHub={requestHub} openConfig={() => {}} leaveHub={() => {}} t={t} />)
+
+    await screen.findByRole('heading', { name: zh.homeTitle })
+    fireEvent.click(screen.getByRole('button', { name: zh.navGitHub }))
+    await screen.findByText('unpinned-project')
+    fireEvent.click(screen.getByRole('button', { name: zh.oneClickSetup }))
+    expect(await screen.findByRole('dialog', { name: zh.unpinnedSourceTitle })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh.cancelUnpinned }))
+    expect(requestHub).not.toHaveBeenCalledWith('dshmk-install', expect.anything(), expect.anything())
+
+    fireEvent.click(screen.getByRole('button', { name: zh.oneClickSetup }))
+    fireEvent.click(await screen.findByRole('button', { name: zh.continueUnpinned }))
+    await waitFor(() => {
+      expect(requestHub).toHaveBeenCalledWith('dshmk-install', { allowUnpinned: true, repositoryId: 105 }, expect.anything())
+    })
+  })
+
   it('shows native progress, forwards cancellation, and restores install actions after failure', async () => {
     let rejectInstall: ((error: Error) => void) | undefined
     const requestHub = vi.fn((operation: string, _payload?: Readonly<Record<string, unknown>>, options?: { readonly onProgress?: (progress: typeof progressUpdate) => void }) => {
@@ -421,7 +452,7 @@ describe('SetupHubSettingsTab', () => {
       })
       return Promise.resolve({})
     }) as unknown as SetupHubSettingsTabProps['requestHub']
-    const progressUpdate = { detail: 'example-dshmk', message: '正在加载 Bundle', percent: 88, stage: 'activation' as const, timestamp: '2026-08-16T00:00:00Z' }
+    const progressUpdate = { detail: 'example-dshmk', message: '正在激活组件', percent: 88, stage: 'activation' as const, timestamp: '2026-08-16T00:00:00Z' }
     render(<SetupHubDesktopSurface {...runtimeProps} desktopAvailable list={async () => ({ schemaVersion: 1, generatedAt: '2026-08-15T00:00:00.000Z', source: 'https://example.com', entries: [] })} install={async () => 'ok'} requestHub={requestHub} openConfig={() => {}} leaveHub={() => {}} t={t} />)
 
     await screen.findByRole('heading', { name: zh.homeTitle })
@@ -429,7 +460,7 @@ describe('SetupHubSettingsTab', () => {
     await screen.findByText('dshmk-project')
     fireEvent.click(screen.getByRole('button', { name: zh.oneClickSetup }))
     expect(await screen.findByRole('dialog', { name: zh.setupProgressTitle })).toBeTruthy()
-    expect(await screen.findByText('正在加载 Bundle')).toBeTruthy()
+    expect(await screen.findByText('正在激活组件')).toBeTruthy()
     expect(screen.getByText(zh.setupStageActivation)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh.cancelInstall }))
     await waitFor(() => { expect(requestHub).toHaveBeenCalledWith('setup-cancel') })

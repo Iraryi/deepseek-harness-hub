@@ -230,6 +230,12 @@ describe('translation scope discovery', () => {
 })
 
 describe('translation structural signature', () => {
+  it('normalizes localized Markdown targets and headings', () => {
+    const source = signature('[Windows](../../windows/README.md#run)\n')
+    const counterpart = signature('[Windows](../../windows/README.zh.md#运行)\n')
+    expect(translationStructureDiff(source, counterpart)).toEqual([])
+  })
+
   it('accepts matching list kinds, starts, and item counts', () => {
     const source = signature('3. One\n4. Two\n\n- A\n- B\n')
     const counterpart = signature('3. 一\n4. 二\n\n- 甲\n- 乙\n')

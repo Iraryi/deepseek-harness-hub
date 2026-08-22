@@ -1,54 +1,47 @@
 # Setup Package Specification v1
 
+[中文](setup-package-spec.zh.md)
+
 ## Purpose
 
-Registry v1 makes installation behavior inspectable and portable across the HUB UI, independent Setup EXEs, offline imports, and future automation.
+Registry v1 is the machine-readable contract shared by the HUB UI, the CLI installer, standalone Setup evidence, offline imports, and future automation. It describes an installable Setup; discovery-only records from DSHMK or GitHub do not belong in this registry until they have a concrete, verifiable installation plan.
 
 ## Package kinds
 
 ### Virtual Setup
 
-A virtual Setup is a manifest and deterministic recipe rendered inside the HUB. It may invoke the DSH CLI, a package manager, a release download, a source checkout, or an assisted manual action. It is **not** an EXE conversion service.
+A virtual Setup is a manifest-backed recipe rendered by HUB and installed into a DSH profile. Its `install.mode` is `profile`, and its source is either an in-box bundle or a verified `package`/`archive` artifact. It is not a service that converts arbitrary GitHub repositories into EXEs.
 
-Use virtual Setup when upstream already has a stable installation method and the HUB can explain and execute it reliably.
+### Executable Setup
 
-### Standalone Setup
+An executable Setup points to a distributable installer artifact. Its `kind` is `executable`, its `install.mode` is `executable`, and its artifact must carry an HTTPS URL, SHA-256 digest, and optional Windows platform metadata. Windows execution also checks the actual Authenticode evidence before launching the installer.
 
-A standalone Setup is a real distributable installer, normally an EXE on Windows. The curated library accepts it only after clean-profile installation, launch, update/repair, uninstall, and residue checks.
+## Registry entry
 
-## Required declarations
+The registry is an object with `schemaVersion`, `generatedAt`, `source`, and `entries`. Each entry has a `manifest` and registry-owned `metrics`; ranking data is kept outside the maintainer-authored manifest.
 
-- Stable package ID, display name, version, publisher, summary, categories, and tags.
-- Canonical source repository and immutable version/ref where practical.
-- License identifier or an explicit `unknown` state.
-- Supported DSH versions, surfaces, platforms, and architectures.
-- Installation mode, target profile, restart behavior, and rollback/uninstall behavior.
-- Network hosts, administrator privilege, external runtime, and expected file-write declarations.
-- Signature/certificate state and audit level.
-- Artifact URL, byte size, and SHA-256 for standalone packages.
+## Manifest fields
 
-## Setup UI contract
+- `schemaVersion`, `id`, `name`, `description`, and `version` identify the immutable Setup record. `name` and `description` may be plain strings or objects with a required `default` and optional `zh` and `en` values.
+- `kind`, `categories`, and `tags` describe the install surface and discovery vocabulary. Categories and tags do not grant trust.
+- `source` contains an HTTPS repository, a ref, and optional commit and release identifiers. A commit is a 40-character hexadecimal hash when present.
+- `compatibility` declares the DSH range, supported surfaces (`cli`, `web`, or `desktop`), optional Node range, and optional Windows platform set.
+- `license` contains an identifier, display name, optional HTTPS notice URL, optional notice text, and an explicit `redistributable` decision.
+- `signature` records certificate or package-signature evidence. `audit` records review status and the checks that actually ran; neither field is a self-authenticated safety guarantee.
+- `artifacts` is non-empty. An `in-box` artifact names a component already carried by DSH; a remote `package`, `archive`, or `installer` artifact must include an HTTPS URL and SHA-256 digest.
+- `install` selects either an in-box bundle, a verified profile package/archive, or an executable artifact. Artifact IDs must resolve within the same manifest.
+- `permissions` and `network` state the declared file, profile, privilege, and network effects shown before installation.
 
-Every Setup surface must show:
+## Installation rules
 
-1. Package and publisher identity.
-2. Source, license, certificate/signature, and validation state.
-3. Components to install and optional choices.
-4. Dependencies and environment checks.
-5. Download progress with per-artifact sub-progress.
-6. A manual-download/import path during dependency acquisition.
-7. Installation progress and meaningful current-step text.
-8. Restart requirements and a clear completion result.
-9. Failure details, retry, open-log, and cleanup/rollback actions.
+The CLI parses the manifest before any download or process launch. Remote artifacts are stored in a content-addressed cache and accepted only after their SHA-256 digest matches. Profile installation passes only the verified local package/archive to the private Runtime package manager; executable installation is Windows-only and launches the verified installer without a shell.
 
-Going backward in the wizard must reset progress visuals and stale results. Controls must not flicker, overlap, or change layout when state changes.
+Virtual and executable entries use the same evidence panel, but they do not share trust or execution semantics. A GitHub source classification requires explicit user acknowledgement, and an unverified non-GitHub source requires a stronger acknowledgement. A rejected audit status blocks installation.
 
-## Profile isolation
+DSHMK one-click candidates whose GitHub command is not `github:<owner>/<repository>#<40-character-commit>` are shown as unpinned candidates. HUB requires an in-product confirmation before installation; the native launcher then resolves the default branch HEAD when available, installs the resulting archive through the DSH Web Profile engine, and records the branch, resolved Commit, artifact URL, byte count, and SHA-256. If GitHub metadata cannot be resolved, it uses the declared default-branch archive and records the user-confirmed unpinned source.
 
-Components target `desktop`, `hub`, `both`, or a named DSH profile. `desktop` is the default for third-party UI components. A component may affect the HUB only when its manifest declares HUB compatibility and the user selects that scope.
+## Schema and examples
 
-## Lifecycle
+The normative manifest schema is [`registry/schema/setup-package.schema.json`](../../registry/schema/setup-package.schema.json). The registry wrapper schema is [`registry/schema/setup-registry.schema.json`](../../registry/schema/setup-registry.schema.json). The maintained catalog is [`registry/catalog.json`](../../registry/catalog.json), mirrored byte-for-byte at [`apps/web/public/setup/registry.json`](../../apps/web/public/setup/registry.json). A minimal authoring example is [`examples/setup-package/manifest.json`](../../examples/setup-package/manifest.json).
 
-Installed inventory records package ID, version, source/ref, target profile, files or workspace path, install timestamp, and restart state. Removal must either complete immediately or prompt for a restart; a plugin-load failure surface must provide the same restart path.
-
-The normative machine-readable contract is [`registry/schema/setup-package.schema.json`](../registry/schema/setup-package.schema.json).
+Run `pnpm run validate:hub-catalog` before submitting a catalog change. The validator checks both catalog mirrors, rejects legacy manifest fields, verifies artifact references, and validates the setup-workspace examples.

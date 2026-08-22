@@ -1,5 +1,7 @@
 # HUB source layout
 
+[中文](source-layout.zh.md)
+
 The repository root is the complete, buildable source context for DeepSeek Harness HUB. HUB development, review, and customization do not depend on the Desktop repository or unpublished packages.
 
 ## Primary customization points

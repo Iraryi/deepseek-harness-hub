@@ -112,7 +112,7 @@ export interface HubDshmkInstallCandidate {
 }
 
 /** Native installation decision for a DSHMK project. */
-export type HubDshmkInstallMode = 'one-click' | 'reference' | 'ambiguous' | 'local'
+export type HubDshmkInstallMode = 'one-click' | 'one-click-unpinned' | 'reference' | 'ambiguous' | 'local'
 
 /** Live metadata fetched after the DSHMK validation snapshot. */
 export interface HubDshmkLiveMetadata {

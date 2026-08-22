@@ -1,19 +1,19 @@
-# DeepSeek Harness HUB `v0.1.0-rc.7` — 2026-08-21
+# DeepSeek Harness HUB `v0.1.0-rc.7-hotfix.1` — 2026-08-22
 
 ## Update log
 
-- Refresh DSHMK after the cached first paint instead of leaving the HUB permanently labeled `本机缓存` when the live catalog becomes reachable.
-- Raise the first-party catalog response limit to 32 MiB and give the official DSHMK endpoint a bounded four-minute transfer window; retain the shorter timeout and coverage guard for alternate raw sources.
-- Add live GitHub Stars, repository timestamps, topics, npm version metadata, and a clear `source updated since validation` state to catalog cards and details.
-- Distinguish one-click Setup, installation reference, ambiguous installation plans, and local-build-required projects so unsupported projects no longer present a misleading install action.
-- Preserve cached-first startup, current filters, pagination, scroll position, and open details while a background refresh completes.
-- Keep Full Setup, Lite Setup, Runtime ZIP, Portable ZIP, the PowerShell installer, release manifest, and SHA-256 checksums aligned to the same release version.
+- Preserve the HUB installed Setup library, manifests, receipts, offline packages, account state, and catalog data during application update and repair.
+- Keep portable data identity during the default keep-data uninstall so reinstall selects the same HUB library instead of opening an empty standard data root.
+- Recover portable installs created by older uninstallers even when `portable.mode` and the new data marker are both missing.
+- Retain one valid `installed.json` backup, recover a damaged primary index, and rebind retained workspaces to the active HUB library path.
+- Keep explicit delete-data uninstall destructive: it removes standard data, portable data, and portable identity markers.
+- Rebuild the Windows Launcher, Runtime, Full Setup, and Lite Setup with the same `0.1.0-rc.7-hotfix.1` version.
 
 ## 更新日志
 
-- 首屏先使用缓存，同时在在线目录可达后刷新 DSHMK；不再因为在线刷新较晚而永久显示“本机缓存”。
-- 将第一方目录响应上限提高到 32 MiB，并为官方 DSHMK 端点提供有界的四分钟传输窗口；备用 raw 来源继续使用较短超时和覆盖量保护。
-- 在目录卡片和详情页显示实时 GitHub Star、仓库时间、Topics、npm 版本元数据，并明确标识“源码在验证后更新”。
-- 区分“一键 SETUP”“安装参考”“安装方案不明确”和“需要本地构建”，不再给不支持的项目显示具有误导性的安装按钮。
-- 在线刷新完成时保留缓存首屏、当前筛选、页码、滚动位置和已打开的详情。
-- Full、Lite、Runtime ZIP、Portable ZIP、PowerShell 安装器、Release manifest 与 SHA-256 校验文件统一使用同一版本号。
+- 应用更新和修复时保留 HUB 的已安装 Setup 库、清单、收据、离线包、账户状态和目录数据。
+- 默认选择“保留用户数据”卸载时保留便携数据身份，重装会继续使用原 HUB 库，不会误进空白的标准数据目录。
+- 兼容旧卸载器留下的数据：即使 `portable.mode` 和新数据标记都不存在，也能根据受管理内容恢复便携模式。
+- 为 `installed.json` 保留一份有效备份；主索引损坏时自动恢复，并把保留的工作区重新绑定到当前 HUB 库路径。
+- 明确选择“删除用户数据”时仍会彻底删除标准数据、便携数据和便携身份标记。
+- Windows Launcher、Runtime、Full Setup 与 Lite Setup 统一重建为 `0.1.0-rc.7-hotfix.1`。

@@ -1,5 +1,7 @@
 # Custom Setup Workspaces
 
+[中文](custom-workspaces.zh.md)
+
 A Setup Workspace is the editable authoring layer behind a virtual Setup. It gives maintainers, local users, and AI-assisted editors a stable directory to modify without changing the HUB executable or pretending that arbitrary source code is already a vetted installer.
 
 ## Design goals
@@ -22,7 +24,7 @@ my-setup-workspace/
 └─ assets/
 ```
 
-The normative manifest schema is [`registry/schema/setup-workspace.schema.json`](../registry/schema/setup-workspace.schema.json). A complete starter lives in [`examples/setup-workspace/manifest.json`](../examples/setup-workspace/manifest.json).
+The normative manifest schema is [`registry/schema/setup-workspace.schema.json`](../../registry/schema/setup-workspace.schema.json). A complete starter lives in [`examples/setup-workspace/manifest.json`](../../examples/setup-workspace/manifest.json).
 
 ## Source kinds
 

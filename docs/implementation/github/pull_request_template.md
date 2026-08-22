@@ -1,13 +1,15 @@
-<!-- 写 Fixes #NN 表示解决并自动关闭；写 Related to #NN 仅关联。 -->
-<!-- 进入评审的非 Draft 人类 PR 至少引用一个同仓库 Issue。 -->
-<!-- 解决型 PR 与 Issue 同步 Priority；解决多个 Issue 时取最高值。 -->
+<!-- Write Fixes #NN to resolve and close an issue automatically; write Related to #NN for a reference only. -->
+<!-- A non-Draft human PR entering review must cite at least one issue in this repository. -->
+<!-- A resolving PR mirrors the issue Priority; use the highest value when resolving multiple issues. -->
 
-关联 Issue：
+English | [中文](pull_request_template.zh.md)
+
+Related issue:
 
 <details>
-<summary>变更与验证</summary>
+<summary>Changes and validation</summary>
 
-- 变更：
-- 验证：
+- Changes:
+- Validation:
 
 </details>

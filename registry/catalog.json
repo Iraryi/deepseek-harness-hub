@@ -1,149 +1,283 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-17T00:00:00.000Z",
-  "channel": "preview",
+  "generatedAt": "2026-08-22T00:00:00.000Z",
+  "source": "https://raw.githubusercontent.com/Iraryi/deepseek-harness-hub/main/registry/catalog.json",
   "entries": [
     {
-      "schemaVersion": 1,
-      "id": "deepseek-harness-desktop-full",
-      "name": "DeepSeek Harness Desktop — Full Setup",
-      "summary": "Offline-first Windows installer with Desktop, HUB, CONFIG, private Node.js Runtime, and WebView2 recovery.",
-      "version": "0.1.0-rc.5",
-      "publisher": { "name": "DeepSeek Harness HUB contributors", "url": "https://github.com/Iraryi/deepseek-harness-hub" },
-      "kind": "standalone",
-      "categories": ["desktop", "runtime", "first-party"],
-      "tags": ["windows", "offline", "webview2", "recommended"],
-      "featured": true,
-      "source": { "repository": "https://github.com/Iraryi/deepseek-harness-desktop", "ref": "4af6b2a0abdff7684695639ebab84e66b8e6743f" },
-      "license": { "identifier": "MIT", "url": "https://github.com/Iraryi/deepseek-harness-desktop/blob/master/LICENSE" },
-      "compatibility": { "dsh": "0.1.0-rc.5", "platforms": ["windows"], "architectures": ["x64"], "surfaces": ["both"] },
-      "trust": { "signature": "unsigned", "review": "lifecycle", "reviewedAt": "2026-08-17T00:00:00.000Z" },
-      "requirements": { "administrator": true, "restart": "none", "networkHosts": [], "externalRuntimes": [] },
-      "install": { "mode": "release-asset", "profile": "both", "rollback": "Use Windows Installed apps to uninstall; user-created data is preserved." },
-      "artifacts": [{ "name": "DeepSeek-Harness-Setup-Full-0.1.0-rc.5-win-x64.exe", "url": "https://github.com/Iraryi/deepseek-harness-hub/releases/download/v0.1.0-rc.5/DeepSeek-Harness-Setup-Full-0.1.0-rc.5-win-x64.exe", "bytes": 332921731, "sha256": "c56fb7312b03acf12b46b0d3189aa2b32c51024b7c59bffbf443502fbf5bdf87" }]
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "dsh-full-capability-pack",
+        "name": {
+          "default": "DSH Full Capability Pack",
+          "zh": "DSH 完整能力包",
+          "en": "DSH Full Capability Pack"
+        },
+        "description": {
+          "default": "Enables the complete standard preset and durable on-demand session search.",
+          "zh": "启用完整标准预设和按需持久化会话搜索。",
+          "en": "Enables the complete standard preset and durable on-demand session search."
+        },
+        "version": "0.1.0-rc.7",
+        "kind": "virtual",
+        "categories": [
+          "official",
+          "capability-pack"
+        ],
+        "tags": [
+          "third-party-api",
+          "usage-statistics",
+          "skills",
+          "tools",
+          "search",
+          "standard-preset"
+        ],
+        "source": {
+          "repository": "https://github.com/Iraryi/deepseek-harness-hub",
+          "ref": "v0.1.0-rc.7",
+          "commit": "c92cbf77d24f0b0ee907a2cdd9c40d26a39d39a7",
+          "release": "v0.1.0-rc.7"
+        },
+        "compatibility": {
+          "dsh": ">=0.1.0-rc.7 <0.2.0",
+          "surfaces": [
+            "web",
+            "desktop"
+          ],
+          "node": "^22.19.0 || >=24.0.0",
+          "platforms": [
+            "any"
+          ]
+        },
+        "license": {
+          "identifier": "MIT",
+          "name": "MIT License",
+          "url": "https://github.com/Iraryi/deepseek-harness-hub/blob/v0.1.0-rc.7/LICENSE",
+          "redistributable": true
+        },
+        "signature": {
+          "status": "unknown",
+          "type": "other",
+          "signer": "Unsigned development Setup; release signing is required before certification"
+        },
+        "audit": {
+          "status": "reviewed",
+          "auditor": "DeepSeek Harness HUB project",
+          "checkedAt": "2026-08-22T00:00:00.000Z",
+          "checks": [
+            "manifest",
+            "in-box resolution",
+            "profile composition"
+          ]
+        },
+        "artifacts": [
+          {
+            "id": "in-box-bundle",
+            "kind": "in-box",
+            "component": "@deepseek-ai/dsh-full-capability-pack",
+            "platform": "any"
+          }
+        ],
+        "install": {
+          "mode": "profile",
+          "source": "in-box",
+          "bundle": "@deepseek-ai/dsh-full-capability-pack",
+          "profile": "web"
+        },
+        "permissions": [
+          "modify the selected DSH profile",
+          "write the session-search database under DSH_HOME"
+        ],
+        "network": []
+      },
+      "metrics": {
+        "installs": 0,
+        "updatedAt": "2026-08-22T00:00:00.000Z"
+      }
     },
     {
-      "schemaVersion": 1,
-      "id": "deepseek-harness-desktop-lite",
-      "name": "DeepSeek Harness Desktop — Lite Setup",
-      "summary": "Small Windows installer that downloads a verified Runtime or imports a manually downloaded Runtime ZIP.",
-      "version": "0.1.0-rc.5",
-      "publisher": { "name": "DeepSeek Harness HUB contributors", "url": "https://github.com/Iraryi/deepseek-harness-hub" },
-      "kind": "standalone",
-      "categories": ["desktop", "runtime", "first-party"],
-      "tags": ["windows", "online", "manual-import"],
-      "featured": true,
-      "source": { "repository": "https://github.com/Iraryi/deepseek-harness-desktop", "ref": "4af6b2a0abdff7684695639ebab84e66b8e6743f" },
-      "license": { "identifier": "MIT", "url": "https://github.com/Iraryi/deepseek-harness-desktop/blob/master/LICENSE" },
-      "compatibility": { "dsh": "0.1.0-rc.5", "platforms": ["windows"], "architectures": ["x64"], "surfaces": ["both"] },
-      "trust": { "signature": "unsigned", "review": "lifecycle", "reviewedAt": "2026-08-17T00:00:00.000Z" },
-      "requirements": { "administrator": true, "restart": "none", "networkHosts": ["github.com", "objects.githubusercontent.com"], "externalRuntimes": [] },
-      "install": { "mode": "release-asset", "profile": "both", "rollback": "Use Windows Installed apps to uninstall; user-created data is preserved." },
-      "artifacts": [{ "name": "DeepSeek-Harness-Setup-Lite-0.1.0-rc.5-win-x64.exe", "url": "https://github.com/Iraryi/deepseek-harness-hub/releases/download/v0.1.0-rc.5/DeepSeek-Harness-Setup-Lite-0.1.0-rc.5-win-x64.exe", "bytes": 4208718, "sha256": "c2e44ed04e0fbb17b67e1d7d1507cf552abd15488af0d79df7409d1ac4e36f53" }]
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "cakeni-harness-pet",
+        "name": {
+          "default": "harness-pet",
+          "zh": "Harness Pet 桌面宠物",
+          "en": "Harness Pet"
+        },
+        "description": {
+          "default": "Harness Pet — an unofficial community pet for DeepSeek Harness. Not affiliated with, endorsed by, or maintained by DeepSeek.",
+          "zh": "面向 DeepSeek Harness 的非官方社区桌面宠物；与 DeepSeek 无隶属、认可或维护关系。",
+          "en": "An unofficial community desktop pet for DeepSeek Harness; not affiliated with, endorsed by, or maintained by DeepSeek."
+        },
+        "version": "0.1.0",
+        "kind": "virtual",
+        "categories": [
+          "community",
+          "appearance"
+        ],
+        "tags": [
+          "pet",
+          "desktop",
+          "github-source"
+        ],
+        "source": {
+          "repository": "https://github.com/cakeni/harness-pet",
+          "ref": "main",
+          "commit": "29bb8f0fbba5514b83300a103e2a1088a02b433a"
+        },
+        "compatibility": {
+          "dsh": ">=0.1.0-rc.5 <0.2.0",
+          "surfaces": [
+            "web",
+            "desktop"
+          ],
+          "platforms": [
+            "any"
+          ]
+        },
+        "license": {
+          "identifier": "MIT",
+          "name": "MIT License",
+          "url": "https://github.com/cakeni/harness-pet/blob/29bb8f0fbba5514b83300a103e2a1088a02b433a/LICENSE",
+          "redistributable": true
+        },
+        "signature": {
+          "status": "unsigned"
+        },
+        "audit": {
+          "status": "unreviewed",
+          "auditor": "Automated GitHub discovery",
+          "checkedAt": "2026-08-15T22:19:18.8138370+00:00",
+          "checks": [
+            "GitHub metadata",
+            "default branch pinned",
+            "codeload SHA-256",
+            "root package manifest",
+            "archive installation with lifecycle scripts disabled"
+          ]
+        },
+        "artifacts": [
+          {
+            "id": "source-archive",
+            "kind": "archive",
+            "url": "https://codeload.github.com/cakeni/harness-pet/tar.gz/29bb8f0fbba5514b83300a103e2a1088a02b433a",
+            "sha256": "e9ce666832c6c3f2a6089a2fffd0062466eb1f79a70879952e68164c0bcbb6ac",
+            "fileName": "cakeni-harness-pet-29bb8f0fbba5.tgz",
+            "bytes": 1901107,
+            "platform": "any"
+          }
+        ],
+        "install": {
+          "mode": "profile",
+          "source": "package",
+          "artifactId": "source-archive",
+          "profile": "web"
+        },
+        "permissions": [
+          "modify the selected DSH profile",
+          "install-scripts"
+        ],
+        "network": [
+          "GitHub artifact download",
+          "runtime network behavior not yet audited"
+        ]
+      },
+      "metrics": {
+        "stars": 5,
+        "installs": 0,
+        "updatedAt": "2026-08-15T13:50:35Z"
+      }
     },
     {
-      "schemaVersion": 1,
-      "id": "deepseek-harness-full-capability-pack",
-      "name": "DeepSeek Harness Full Capability Pack",
-      "summary": "First-party virtual Setup for the complete model, API, usage, skill, workflow, tool, and desktop-oriented capability profile.",
-      "version": "0.1.0-rc.5",
-      "publisher": { "name": "DeepSeek Harness HUB contributors", "url": "https://github.com/Iraryi/deepseek-harness-hub" },
-      "kind": "virtual",
-      "categories": ["capability-pack", "first-party"],
-      "tags": ["models", "api", "usage", "skills", "tools"],
-      "featured": true,
-      "source": { "repository": "https://github.com/Iraryi/deepseek-harness-desktop", "ref": "4af6b2a0abdff7684695639ebab84e66b8e6743f" },
-      "license": { "identifier": "MIT", "url": "https://github.com/Iraryi/deepseek-harness-desktop/blob/master/LICENSE" },
-      "compatibility": { "dsh": "0.1.0-rc.5", "platforms": ["windows", "linux", "macos"], "architectures": ["any"], "surfaces": ["desktop"] },
-      "trust": { "signature": "unknown", "review": "install", "reviewedAt": "2026-08-17T00:00:00.000Z" },
-      "requirements": { "administrator": false, "restart": "desktop", "networkHosts": [], "externalRuntimes": [] },
-      "install": { "mode": "dsh-cli", "profile": "desktop", "command": "dsh setup install deepseek-harness-full-capability-pack", "rollback": "Remove the component from HUB inventory and restart Desktop." }
-    },
-    {
-      "schemaVersion": 1,
-      "id": "dsh-market",
-      "name": "DSH Market",
-      "summary": "The DSH ecosystem market surface and discovery companion, presented as a virtual Setup with source and installation evidence.",
-      "version": "5c4d8c25",
-      "publisher": { "name": "dsh-market contributors", "url": "https://github.com/dsh-market/dsh-market" },
-      "kind": "virtual",
-      "categories": ["market", "discovery", "first-party-ecosystem"],
-      "tags": ["dshmk", "market", "catalog", "verified-references"],
-      "featured": true,
-      "source": { "repository": "https://github.com/dsh-market/dsh-market", "ref": "5c4d8c25f0860d67755f719f5e149f99219fd79a" },
-      "license": { "identifier": "SEE-UPSTREAM", "url": "https://github.com/dsh-market/dsh-market" },
-      "compatibility": { "dsh": ">=0.1.0", "platforms": ["windows", "linux", "macos", "web"], "architectures": ["any"], "surfaces": ["hub", "desktop"] },
-      "trust": { "signature": "unknown", "review": "source", "reviewedAt": "2026-08-17T00:00:00.000Z" },
-      "requirements": { "administrator": false, "restart": "hub", "networkHosts": ["github.com", "dshmk.com"], "externalRuntimes": [] },
-      "install": { "mode": "manual", "profile": "hub", "command": "Review the upstream installation reference, then apply the selected DSHMK recipe.", "rollback": "Remove the DSHMK package from HUB inventory and restart HUB." }
-    },
-    {
-      "schemaVersion": 1,
-      "id": "dsh-better-sidebar",
-      "name": "DSH Better Sidebar",
-      "summary": "Community sidebar customization with a Desktop-scoped Setup profile and explicit UI isolation.",
-      "version": "bb3b40ff",
-      "publisher": { "name": "omdsh-dev", "url": "https://github.com/omdsh-dev/DSH-better-sidebar" },
-      "kind": "virtual",
-      "categories": ["interface", "sidebar", "community"],
-      "tags": ["sidebar", "navigation", "ui", "desktop-only"],
-      "source": { "repository": "https://github.com/omdsh-dev/DSH-better-sidebar", "ref": "bb3b40ff15afd4d24c8de2598fafc2e2051c0d69" },
-      "license": { "identifier": "SEE-UPSTREAM", "url": "https://github.com/omdsh-dev/DSH-better-sidebar" },
-      "compatibility": { "dsh": ">=0.1.0", "platforms": ["windows", "linux", "macos"], "architectures": ["any"], "surfaces": ["desktop"] },
-      "trust": { "signature": "unknown", "review": "source", "reviewedAt": "2026-08-17T00:00:00.000Z" },
-      "requirements": { "administrator": false, "restart": "desktop", "networkHosts": ["github.com"], "externalRuntimes": [] },
-      "install": { "mode": "dsh-cli", "profile": "desktop", "command": "dsh setup install dsh-better-sidebar", "rollback": "Disable the Desktop component, remove its receipt, and restart Desktop." }
-    },
-    {
-      "schemaVersion": 1,
-      "id": "dsh-vision-toolkit",
-      "name": "DSH Vision Toolkit",
-      "summary": "Community vision-oriented tools exposed through a reviewable virtual Setup and optional component selection.",
-      "version": "32b4190c",
-      "publisher": { "name": "Anionex", "url": "https://github.com/Anionex/dsh-vision-toolkit" },
-      "kind": "virtual",
-      "categories": ["vision", "tools", "community"],
-      "tags": ["vision", "image", "toolkit", "optional-components"],
-      "source": { "repository": "https://github.com/Anionex/dsh-vision-toolkit", "ref": "32b4190cd8cae86b0f5eff8a4833da5613b0c814" },
-      "license": { "identifier": "SEE-UPSTREAM", "url": "https://github.com/Anionex/dsh-vision-toolkit" },
-      "compatibility": { "dsh": ">=0.1.0", "platforms": ["windows", "linux", "macos"], "architectures": ["any"], "surfaces": ["desktop"] },
-      "trust": { "signature": "unknown", "review": "source", "reviewedAt": "2026-08-17T00:00:00.000Z" },
-      "requirements": { "administrator": false, "restart": "desktop", "networkHosts": ["github.com"], "externalRuntimes": [] },
-      "install": { "mode": "dsh-cli", "profile": "desktop", "command": "dsh setup install dsh-vision-toolkit", "rollback": "Remove selected toolkit components and restart Desktop." }
-    },
-    {
-      "schemaVersion": 1,
-      "id": "dsh-usage-stats",
-      "name": "DSH Usage Stats",
-      "summary": "Usage and consumption reporting presented with explicit data-scope and network declarations.",
-      "version": "79d59a48",
-      "publisher": { "name": "Ychris12138", "url": "https://github.com/Ychris12138/dsh-usage-stats" },
-      "kind": "virtual",
-      "categories": ["analytics", "usage", "community"],
-      "tags": ["usage", "statistics", "cost", "privacy-review"],
-      "source": { "repository": "https://github.com/Ychris12138/dsh-usage-stats", "ref": "79d59a48e38601dac50b7ba51818aa04f8a4631e" },
-      "license": { "identifier": "SEE-UPSTREAM", "url": "https://github.com/Ychris12138/dsh-usage-stats" },
-      "compatibility": { "dsh": ">=0.1.0", "platforms": ["windows", "linux", "macos"], "architectures": ["any"], "surfaces": ["desktop", "hub"] },
-      "trust": { "signature": "unknown", "review": "source", "reviewedAt": "2026-08-17T00:00:00.000Z" },
-      "requirements": { "administrator": false, "restart": "desktop", "networkHosts": ["github.com"], "externalRuntimes": [] },
-      "install": { "mode": "dsh-cli", "profile": "desktop", "command": "dsh setup install dsh-usage-stats", "rollback": "Delete the usage-stats receipt and restart the selected profile." }
-    },
-    {
-      "schemaVersion": 1,
-      "id": "superpowers-dsh",
-      "name": "Superpowers DSH",
-      "summary": "Community workflow and skill-oriented extensions with a source-pinned virtual Setup recipe.",
-      "version": "49e2d65d",
-      "publisher": { "name": "LayneChai", "url": "https://github.com/LayneChai/superpowers-dsh" },
-      "kind": "virtual",
-      "categories": ["skills", "workflow", "community"],
-      "tags": ["skills", "workflow", "automation", "source-pinned"],
-      "source": { "repository": "https://github.com/LayneChai/superpowers-dsh", "ref": "49e2d65db55b4d3ec065ad824efe9b09465c8a26" },
-      "license": { "identifier": "SEE-UPSTREAM", "url": "https://github.com/LayneChai/superpowers-dsh" },
-      "compatibility": { "dsh": ">=0.1.0", "platforms": ["windows", "linux", "macos"], "architectures": ["any"], "surfaces": ["desktop"] },
-      "trust": { "signature": "unknown", "review": "source", "reviewedAt": "2026-08-17T00:00:00.000Z" },
-      "requirements": { "administrator": false, "restart": "desktop", "networkHosts": ["github.com"], "externalRuntimes": [] },
-      "install": { "mode": "dsh-cli", "profile": "desktop", "command": "dsh setup install superpowers-dsh", "rollback": "Remove the selected skills receipt and restart Desktop." }
+      "manifest": {
+        "schemaVersion": 1,
+        "id": "yuuu0109-dsh-cache-hit-decimal",
+        "name": {
+          "default": "@yuuu0109/dsh-cache-hit-decimal",
+          "zh": "缓存命中率双小数显示",
+          "en": "Two-decimal cache-hit rate"
+        },
+        "description": {
+          "default": "Two-decimal cache-hit rate for the DeepSeek Harness Web GUI",
+          "zh": "在 DeepSeek Harness Web 界面中显示两位小数的缓存命中率。",
+          "en": "Shows a two-decimal cache-hit rate in the DeepSeek Harness Web UI."
+        },
+        "version": "0.1.4",
+        "kind": "virtual",
+        "categories": [
+          "community",
+          "interface"
+        ],
+        "tags": [
+          "cache",
+          "statistics",
+          "github-source"
+        ],
+        "source": {
+          "repository": "https://github.com/Yuuu0109/dsh-cache-hit-decimal",
+          "ref": "main",
+          "commit": "bf4bfe5a00a485e0ba37c0203f618a2dcda33ecd"
+        },
+        "compatibility": {
+          "dsh": ">=0.1.0-rc.5 <0.2.0",
+          "surfaces": [
+            "web",
+            "desktop"
+          ],
+          "platforms": [
+            "any"
+          ]
+        },
+        "license": {
+          "identifier": "MIT",
+          "name": "MIT License",
+          "url": "https://github.com/Yuuu0109/dsh-cache-hit-decimal/blob/bf4bfe5a00a485e0ba37c0203f618a2dcda33ecd/LICENSE",
+          "redistributable": true
+        },
+        "signature": {
+          "status": "unsigned"
+        },
+        "audit": {
+          "status": "unreviewed",
+          "auditor": "Automated GitHub discovery",
+          "checkedAt": "2026-08-15T22:19:08.7146962+00:00",
+          "checks": [
+            "GitHub metadata",
+            "default branch pinned",
+            "codeload SHA-256",
+            "root package manifest",
+            "archive installation with lifecycle scripts disabled"
+          ]
+        },
+        "artifacts": [
+          {
+            "id": "source-archive",
+            "kind": "archive",
+            "url": "https://codeload.github.com/Yuuu0109/dsh-cache-hit-decimal/tar.gz/bf4bfe5a00a485e0ba37c0203f618a2dcda33ecd",
+            "sha256": "9ac1dc2afd6013b0e6d9e7a93b61af740f4d693df0b725e73ac2b88e8417ddb2",
+            "fileName": "yuuu0109-dsh-cache-hit-decimal-bf4bfe5a00a4.tgz",
+            "bytes": 54532,
+            "platform": "any"
+          }
+        ],
+        "install": {
+          "mode": "profile",
+          "source": "package",
+          "artifactId": "source-archive",
+          "profile": "web"
+        },
+        "permissions": [
+          "modify the selected DSH profile"
+        ],
+        "network": [
+          "GitHub artifact download",
+          "runtime network behavior not yet audited"
+        ]
+      },
+      "metrics": {
+        "stars": 0,
+        "installs": 0,
+        "updatedAt": "2026-08-15T14:27:00Z"
+      }
     }
   ]
 }

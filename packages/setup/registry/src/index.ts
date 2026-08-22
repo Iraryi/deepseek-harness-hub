@@ -25,20 +25,34 @@ export const SETUP_REGISTRY_SCHEMA_VERSION = 1 as const
  */
 export function parseSetupRegistry(value: unknown): SetupRegistryIndex {
   if (!isRecord(value)) throw new SetupRegistryError([{ path: '$', message: 'must be an object' }])
-  if (value.schemaVersion !== SETUP_REGISTRY_SCHEMA_VERSION) throw new SetupRegistryError([{ path: '$.schemaVersion', message: `must equal ${SETUP_REGISTRY_SCHEMA_VERSION}` }])
-  if (typeof value.generatedAt !== 'string' || Number.isNaN(Date.parse(value.generatedAt))) throw new SetupRegistryError([{ path: '$.generatedAt', message: 'must be an ISO date string' }])
-  if (typeof value.source !== 'string' || !isHttps(value.source)) throw new SetupRegistryError([{ path: '$.source', message: 'must be an https URL' }])
-  if (!Array.isArray(value.entries)) throw new SetupRegistryError([{ path: '$.entries', message: 'must be an array' }])
+  const rootIssues: SetupRegistryIssue[] = []
+  rejectUnknownKeys(value, ['schemaVersion', 'generatedAt', 'source', 'entries'], '$', rootIssues)
+  if (value.schemaVersion !== SETUP_REGISTRY_SCHEMA_VERSION) rootIssues.push({ path: '$.schemaVersion', message: `must equal ${SETUP_REGISTRY_SCHEMA_VERSION}` })
+  if (typeof value.generatedAt !== 'string' || !isIsoDateTime(value.generatedAt)) rootIssues.push({ path: '$.generatedAt', message: 'must be an ISO date-time string' })
+  if (typeof value.source !== 'string' || !isHttps(value.source)) rootIssues.push({ path: '$.source', message: 'must be an https URL' })
+  if (!Array.isArray(value.entries)) rootIssues.push({ path: '$.entries', message: 'must be an array' })
+  if (!Array.isArray(value.entries)) throw new SetupRegistryError(rootIssues)
+  const rawEntries = value.entries
   const entries: SetupListing[] = []
-  const issues: SetupRegistryIssue[] = []
-  value.entries.forEach((entry, index) => {
-    if (!isRecord(entry) || !isRecord(entry.manifest)) {
+  const issues: SetupRegistryIssue[] = [...rootIssues]
+  const ids = new Set<string>()
+  rawEntries.forEach((entry, index) => {
+    if (!isRecord(entry)) {
       issues.push({ path: `$.entries[${index}]`, message: 'must contain a manifest object' })
       return
     }
+    rejectUnknownKeys(entry, ['manifest', 'metrics'], `$.entries[${index}]`, issues)
+    if (!Object.prototype.hasOwnProperty.call(entry, 'metrics')) issues.push({ path: `$.entries[${index}].metrics`, message: 'is required' })
+    if (!isRecord(entry.manifest)) {
+      issues.push({ path: `$.entries[${index}].manifest`, message: 'must be an object' })
+      return
+    }
     try {
+      const parsedManifest = parseSetupManifest(entry.manifest)
+      if (ids.has(parsedManifest.id)) issues.push({ path: `$.entries[${index}].manifest.id`, message: 'must be unique within $.entries' })
+      ids.add(parsedManifest.id)
       entries.push({
-        manifest: parseSetupManifest(entry.manifest),
+        manifest: parsedManifest,
         metrics: parseMetrics(entry.metrics, `$.entries[${index}].metrics`, issues),
       })
     } catch (error) {
@@ -51,7 +65,7 @@ export function parseSetupRegistry(value: unknown): SetupRegistryIndex {
     }
   })
   if (issues.length > 0) throw new SetupRegistryError(issues)
-  return { schemaVersion: 1, generatedAt: value.generatedAt, source: value.source, entries }
+  return { schemaVersion: 1, generatedAt: value.generatedAt as string, source: value.source as string, entries }
 }
 
 /**
@@ -108,11 +122,11 @@ export interface SetupRegistryIssue {
 }
 
 function parseMetrics(value: unknown, path: string, issues: SetupRegistryIssue[]): SetupListing['metrics'] {
-  if (value === undefined) return {}
   if (!isRecord(value)) {
-    issues.push({ path, message: 'must be an object when present' })
+    issues.push({ path, message: 'must be an object' })
     return {}
   }
+  rejectUnknownKeys(value, ['stars', 'installs', 'updatedAt'], path, issues)
   const result: { stars?: number; installs?: number; updatedAt?: string } = {}
   if (value.stars !== undefined) {
     if (!isNonNegativeInteger(value.stars)) issues.push({ path: `${path}.stars`, message: 'must be a non-negative safe integer' })
@@ -123,7 +137,7 @@ function parseMetrics(value: unknown, path: string, issues: SetupRegistryIssue[]
     else result.installs = value.installs
   }
   if (value.updatedAt !== undefined) {
-    if (typeof value.updatedAt !== 'string' || Number.isNaN(Date.parse(value.updatedAt))) issues.push({ path: `${path}.updatedAt`, message: 'must be an ISO date string' })
+    if (typeof value.updatedAt !== 'string' || !isIsoDateTime(value.updatedAt)) issues.push({ path: `${path}.updatedAt`, message: 'must be an ISO date-time string' })
     else result.updatedAt = value.updatedAt
   }
   return result
@@ -143,4 +157,15 @@ function isHttps(value: string): boolean {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function rejectUnknownKeys(record: Record<string, unknown>, allowed: readonly string[], path: string, issues: SetupRegistryIssue[]): void {
+  const accepted = new Set(allowed)
+  for (const key of Object.keys(record)) {
+    if (!accepted.has(key)) issues.push({ path: `${path}.${key}`, message: 'is not allowed by Setup Registry v1' })
+  }
+}
+
+function isIsoDateTime(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value))
 }

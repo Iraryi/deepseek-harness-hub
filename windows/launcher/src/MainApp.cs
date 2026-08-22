@@ -730,6 +730,8 @@ internal sealed class MainForm : Form
     private static readonly IntPtr WindowTopMost = new IntPtr(-1);
     private static readonly IntPtr WindowNoTopMost = new IntPtr(-2);
     private const string SetupProgressPrefix = "DSH_SETUP_PROGRESS ";
+    private const string GeneratedClientCompatStart = "# dsh-hub: generated web-client compatibility:start";
+    private const string GeneratedClientCompatEnd = "# dsh-hub: generated web-client compatibility:end";
     private const string DesktopMarketCompatibilityCss =
         "[data-dsh-desktop-market='true'] [class$='_irow']{flex-wrap:wrap!important;align-items:center!important;justify-content:flex-end!important;gap:10px 12px!important;}"
         + "[data-dsh-desktop-market='true'] [class$='_irow']>div:first-child{flex:1 0 100%!important;width:100%!important;min-width:0!important;max-width:100%!important;overflow:hidden!important;}"
@@ -832,6 +834,7 @@ internal sealed class MainForm : Form
     private readonly object _manualDownloadSync = new object();
     private ManualDownloadSession _activeManualDownload;
     private Dictionary<string, object> _dshmkCatalogCache;
+    private Dictionary<string, object> _dshmkPreviousCatalogCache;
     private DateTime _dshmkCatalogCacheUntilUtc;
     private bool _dshmkCatalogRefreshRunning;
     private string _dshmkCatalogSourceMode;
@@ -2084,7 +2087,7 @@ internal sealed class MainForm : Form
             else if (operation == "dshmk-catalog") data = await QueryDshmkCatalogAsync(payload);
             else if (operation == "dshmk-detail") data = await LoadDshmkDetailAsync(GetInteger(payload, "repositoryId"));
             else if (operation == "dshmk-live-metadata") data = await QueryDshmkLiveMetadataAsync(payload);
-            else if (operation == "dshmk-install") data = await InstallDshmkSetupAsync(requestId, GetInteger(payload, "repositoryId"));
+            else if (operation == "dshmk-install") data = await InstallDshmkSetupAsync(requestId, GetInteger(payload, "repositoryId"), GetBoolean(payload, "allowUnpinned"));
             else if (operation == "setup-cancel") data = CancelActiveSetup();
             else if (operation == "setup-manual-import") data = await ImportManualDownloadAsync(GetString(payload, "downloadId"));
             else if (operation == "setup-open-manual-url") { OpenManualDownloadUrl(GetString(payload, "downloadId"), GetString(payload, "target")); data = new Dictionary<string, object>(); }
@@ -2456,6 +2459,8 @@ internal sealed class MainForm : Form
                 EnsureHubDirectories();
                 WriteTextAtomic(HubDshmkCatalogFile, json);
                 WriteDshmkCatalogProvenance(url);
+                if (_dshmkCatalogCache != null && !ReferenceEquals(_dshmkCatalogCache, live))
+                    _dshmkPreviousCatalogCache = _dshmkCatalogCache;
                 _dshmkCatalogCache = live;
                 _dshmkCatalogCacheUntilUtc = DateTime.UtcNow.AddMinutes(30);
                 _dshmkCatalogSourceMode = "live";
@@ -2622,7 +2627,7 @@ internal sealed class MainForm : Form
             if (projectType != "all" && !string.Equals(GetString(repository, "projectType"), projectType, StringComparison.OrdinalIgnoreCase)) continue;
             if (validation == "verified" && !DshmkIsVerified(repository)) continue;
             string installMode = DshmkInstallMode(repository);
-            if (validation == "installable" && installMode != "one-click") continue;
+            if (validation == "installable" && installMode != "one-click" && installMode != "one-click-unpinned") continue;
             if (validation == "reference" && installMode != "reference") continue;
             if (validation == "ambiguous" && installMode != "ambiguous") continue;
             if (validation == "local" && installMode != "local") continue;
@@ -2677,7 +2682,7 @@ internal sealed class MainForm : Form
     {
         if (repositoryId <= 0) throw new InvalidOperationException("DSHMK repository id is missing or invalid.");
         Dictionary<string, object> catalog = await LoadDshmkCatalogAsync();
-        Dictionary<string, object> selected = FindDshmkRepository(catalog, repositoryId);
+        Dictionary<string, object> selected = FindDshmkRepositoryWithFallback(catalog, repositoryId);
         if (selected == null) throw new InvalidOperationException("The DSHMK project is not present in the current catalog snapshot.");
         string category = GetString(selected, "category");
         List<Dictionary<string, object>> related = new List<Dictionary<string, object>>();
@@ -2722,7 +2727,7 @@ internal sealed class MainForm : Form
         {
             foreach (int repositoryId in requested)
             {
-                Dictionary<string, object> repository = FindDshmkRepository(catalog, repositoryId);
+                Dictionary<string, object> repository = FindDshmkRepositoryWithFallback(catalog, repositoryId);
                 if (repository != null) requests.Add(FetchDshmkLiveMetadataAsync(repository, token, gate));
             }
             KeyValuePair<string, Dictionary<string, object>>[] values = await Task.WhenAll(requests);
@@ -2879,6 +2884,65 @@ internal sealed class MainForm : Form
         return null;
     }
 
+    private Dictionary<string, object> FindDshmkRepositoryWithFallback(Dictionary<string, object> catalog, int repositoryId)
+    {
+        Dictionary<string, object> repository = FindDshmkRepository(catalog, repositoryId);
+        if (repository != null) return repository;
+        repository = FindDshmkRepository(_dshmkPreviousCatalogCache, repositoryId);
+        if (repository != null)
+        {
+            AppendLog("DSHMK retained an item from the previous in-session catalog snapshot: " + repositoryId);
+            return repository;
+        }
+        if (!File.Exists(BundledDshmkCatalogFile)) return null;
+        try
+        {
+            repository = FindDshmkRepository(
+                ParseDshmkCatalog(File.ReadAllText(BundledDshmkCatalogFile, Encoding.UTF8)), repositoryId);
+            if (repository != null)
+                AppendLog("DSHMK restored an item from the bundled catalog fallback: " + repositoryId);
+            return repository;
+        }
+        catch (Exception ex)
+        {
+            AppendLog("DSHMK bundled catalog fallback failed: " + ex.Message);
+            return null;
+        }
+    }
+
+    private Dictionary<string, object> FindDshmkInstallRepositoryWithFallback(Dictionary<string, object> catalog, int repositoryId)
+    {
+        Dictionary<string, object> current = FindDshmkRepository(catalog, repositoryId);
+        if (current != null && DshmkIsInstallable(current)) return current;
+
+        Dictionary<string, object> previous = FindDshmkRepository(_dshmkPreviousCatalogCache, repositoryId);
+        if (previous != null && DshmkIsInstallable(previous))
+        {
+            AppendLog("DSHMK restored an installable candidate from the previous in-session catalog snapshot: " + repositoryId);
+            return previous;
+        }
+
+        if (File.Exists(BundledDshmkCatalogFile))
+        {
+            try
+            {
+                Dictionary<string, object> bundled = FindDshmkRepository(
+                    ParseDshmkCatalog(File.ReadAllText(BundledDshmkCatalogFile, Encoding.UTF8)), repositoryId);
+                if (bundled != null && DshmkIsInstallable(bundled))
+                {
+                    AppendLog("DSHMK restored an installable candidate from the bundled catalog fallback: " + repositoryId);
+                    return bundled;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog("DSHMK install fallback catalog failed: " + ex.Message);
+            }
+        }
+
+        return current ?? previous;
+    }
+
     private static Dictionary<string, object> BuildDshmkRepository(Dictionary<string, object> repository, bool detailed)
     {
         Dictionary<string, object> owner = GetDictionary(repository, "owner") ?? new Dictionary<string, object>();
@@ -2990,7 +3054,8 @@ internal sealed class MainForm : Form
 
     private static bool DshmkIsInstallable(Dictionary<string, object> repository)
     {
-        return DshmkInstallMode(repository) == "one-click";
+        string mode = DshmkInstallMode(repository);
+        return mode == "one-click" || mode == "one-click-unpinned";
     }
 
     private static Dictionary<string, object> DshmkSelectedCandidate(Dictionary<string, object> repository)
@@ -3015,14 +3080,20 @@ internal sealed class MainForm : Form
         if (candidate == null) return "local";
         string command = GetString(candidate, "command");
         string[] args = GetRawStringArray(candidate, "args");
-        if (GetBoolean(candidate, "executable") && args.Length >= 5) return "one-click";
+        if (GetBoolean(candidate, "executable") && args.Length >= 5)
+        {
+            if (string.Equals(GetString(candidate, "source"), "github", StringComparison.OrdinalIgnoreCase)
+                && !IsPinnedDshmkGitHubCandidate(repository, candidate)) return "one-click-unpinned";
+            return "one-click";
+        }
         return !string.IsNullOrEmpty(command) || args.Length > 0 ? "reference" : "local";
     }
 
     private static int DshmkInstallModeRank(Dictionary<string, object> repository)
     {
         string mode = DshmkInstallMode(repository);
-        if (mode == "one-click") return 4;
+        if (mode == "one-click") return 5;
+        if (mode == "one-click-unpinned") return 4;
         if (mode == "reference") return 3;
         if (mode == "ambiguous") return 2;
         return 1;
@@ -3040,17 +3111,17 @@ internal sealed class MainForm : Form
         return comparison != 0 ? comparison : CompareDshmkInteger(left, right, "stars", "name");
     }
 
-    private async Task<Dictionary<string, object>> InstallDshmkSetupAsync(string requestId, int repositoryId)
+    private async Task<Dictionary<string, object>> InstallDshmkSetupAsync(string requestId, int repositoryId, bool allowUnpinned)
     {
         if (repositoryId <= 0) throw new InvalidOperationException("DSHMK repository id is missing or invalid.");
         if (_setupInstallRunning) throw new InvalidOperationException("Another Setup installation is already running.");
         Dictionary<string, object> catalog = await LoadDshmkCatalogAsync();
-        Dictionary<string, object> repository = FindDshmkRepository(catalog, repositoryId);
+        Dictionary<string, object> repository = FindDshmkInstallRepositoryWithFallback(catalog, repositoryId);
         if (repository == null) throw new InvalidOperationException("The DSHMK project is not present in the current catalog snapshot.");
-        if (!DshmkIsInstallable(repository)) throw new InvalidOperationException("This DSHMK project does not have a confirmed one-click installation candidate.");
+        if (!DshmkIsInstallable(repository)) throw new InvalidOperationException("This DSHMK project does not have a supported one-click installation candidate.");
         Dictionary<string, object> install = GetDictionary(repository, "install");
         Dictionary<string, object> candidate = DshmkSelectedCandidate(repository);
-        string[] candidateArgs = ValidateDshmkInstallCandidate(repository, candidate);
+        string[] candidateArgs = ValidateDshmkInstallCandidate(repository, candidate, allowUnpinned);
         string profile = candidateArgs[2];
         string packageSpec = candidateArgs[4];
         HashSet<string> dependenciesBefore = ReadProfileDependencies(profile);
@@ -3061,15 +3132,22 @@ internal sealed class MainForm : Form
         try
         {
             PostHubProgress(requestId, "preflight", 8, "已确认 DSHMK 身份、验证记录与安装候选。", GetString(candidate, "command"));
-            Dictionary<string, object> manifest = await PrepareDshmkSetupManifestAsync(repository, candidate, profile, packageSpec, requestId);
+            Dictionary<string, object> manifest = await PrepareDshmkSetupManifestAsync(repository, candidate, profile, packageSpec, requestId, allowUnpinned);
             string trust = ClassifySetupTrust(manifest);
             JavaScriptSerializer serializer = new JavaScriptSerializer();
             await InstallSetupManifestAsync(serializer.Serialize(manifest), trust, requestId, true);
             if (_setupCancellationRequested) throw new OperationCanceledException("Installation was cancelled.");
 
             PostHubProgress(requestId, "profile", 82, "依赖安装完成，正在核对 Web Profile。", ResolveProfileDirectory(profile));
-            PostHubProgress(requestId, "activation", 90, "正在确认插件已加入 Web Profile 的 Bundle 层。", packageSpec);
-            Dictionary<string, object> verification = VerifyDshmkProfileActivation(repository, profile, packageSpec, dependenciesBefore);
+            PostHubProgress(requestId, "activation", 90, "正在确认插件已在 Web Profile 中激活。", packageSpec);
+            Dictionary<string, object> source = GetDictionary(manifest, "source") ?? new Dictionary<string, object>();
+            Dictionary<string, object> verification = VerifyDshmkProfileActivation(
+                repository,
+                profile,
+                packageSpec,
+                dependenciesBefore,
+                GetString(source, "commit"),
+                ResolveSetupArtifactSha256(manifest));
             string[] packageNames = GetRawStringArray(verification, "packageNames");
             RecordInstalledSetup(manifest, dependenciesBefore, packageNames);
             WriteDshmkInstallReceipt(manifest, repository, candidate, verification);
@@ -3101,7 +3179,7 @@ internal sealed class MainForm : Form
         }
     }
 
-    private static string[] ValidateDshmkInstallCandidate(Dictionary<string, object> repository, Dictionary<string, object> candidate)
+    private static string[] ValidateDshmkInstallCandidate(Dictionary<string, object> repository, Dictionary<string, object> candidate, bool allowUnpinned)
     {
         if (candidate == null || !GetBoolean(candidate, "executable")) throw new InvalidOperationException("DSHMK does not declare an executable install candidate for this project.");
         string[] args = GetRawStringArray(candidate, "args");
@@ -3116,9 +3194,11 @@ internal sealed class MainForm : Form
         string sourceSha = GetString(validation, "sourceSha");
         if (source == "github")
         {
-            string expected = "github:" + fullName + "#" + sourceSha;
-            if (!IsHexDigest(sourceSha, 40) || !string.Equals(packageSpec, expected, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("The DSHMK GitHub candidate is not pinned to the validated source revision.");
+            if (IsPinnedDshmkGitHubCandidate(repository, candidate)) return args;
+            if (!allowUnpinned) throw new InvalidOperationException("This GitHub source is not fixed to a Commit. Confirm the unpinned source before continuing.");
+            string expectedRepository = "github:" + fullName;
+            if (!string.Equals(packageSpec, expectedRepository, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The DSHMK GitHub candidate does not target the declared repository.");
         }
         else if (source == "npm")
         {
@@ -3129,18 +3209,32 @@ internal sealed class MainForm : Form
         return args;
     }
 
+    private static bool IsPinnedDshmkGitHubCandidate(Dictionary<string, object> repository, Dictionary<string, object> candidate)
+    {
+        if (!string.Equals(GetString(candidate, "source"), "github", StringComparison.OrdinalIgnoreCase)) return false;
+        string[] args = GetRawStringArray(candidate, "args");
+        if (args.Length != 5) return false;
+        string packageSpec = args[4];
+        string fullName = GetString(repository, "fullName");
+        string sourceSha = GetString(GetDictionary(repository, "validation"), "sourceSha");
+        return IsHexDigest(sourceSha, 40)
+            && string.Equals(packageSpec, "github:" + fullName + "#" + sourceSha, StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task<Dictionary<string, object>> PrepareDshmkSetupManifestAsync(
         Dictionary<string, object> repository,
         Dictionary<string, object> candidate,
         string profile,
         string packageSpec,
-        string requestId)
+        string requestId,
+        bool allowUnpinned)
     {
         Dictionary<string, object> validation = GetDictionary(repository, "validation") ?? new Dictionary<string, object>();
         string source = GetString(candidate, "source");
         string fullName = GetString(repository, "fullName");
         string repositoryUrl = GetString(repository, "url");
         string sourceSha = GetString(validation, "sourceSha");
+        bool userApprovedUnpinned = false;
         string version;
         string sourceRef;
         string artifactKind;
@@ -3188,14 +3282,68 @@ internal sealed class MainForm : Form
         }
         else
         {
-            if (!IsHexDigest(sourceSha, 40)) throw new InvalidOperationException("The DSHMK GitHub candidate has no valid pinned source revision.");
-            version = "0.0.0-" + sourceSha.Substring(0, 12);
-            sourceRef = sourceSha;
+            bool pinned = IsPinnedDshmkGitHubCandidate(repository, candidate);
+            if (!pinned && !allowUnpinned) throw new InvalidOperationException("This GitHub source is not fixed to a Commit. Confirm the unpinned source before continuing.");
+            userApprovedUnpinned = !pinned;
             artifactKind = "archive";
-            artifactUrl = "https://codeload.github.com/" + fullName + "/tar.gz/" + sourceSha;
-            artifactFileName = SafeCommunityFileName(fullName.Replace('/', '-') + "-" + sourceSha.Substring(0, 12) + ".tgz");
             allowInstallScripts = true;
-            auditChecks.Add("immutable GitHub commit");
+            if (pinned)
+            {
+                version = "0.0.0-" + sourceSha.Substring(0, 12);
+                sourceRef = sourceSha;
+                artifactUrl = "https://codeload.github.com/" + fullName + "/tar.gz/" + sourceSha;
+                artifactFileName = SafeCommunityFileName(fullName.Replace('/', '-') + "-" + sourceSha.Substring(0, 12) + ".tgz");
+                auditChecks.Add("immutable GitHub commit");
+            }
+            else
+            {
+                sourceSha = "";
+                string token = ReadGitHubToken(false);
+                Dictionary<string, object> github = null;
+                string defaultBranch = GetString(repository, "defaultBranch");
+                try
+                {
+                    github = await GitHubApiAsync("/repos/" + fullName, token, false) as Dictionary<string, object>;
+                    if (github != null)
+                    {
+                        string liveRepositoryUrl = GetString(github, "html_url");
+                        if (!string.IsNullOrEmpty(liveRepositoryUrl)) repositoryUrl = liveRepositoryUrl;
+                        string liveBranch = GetString(github, "default_branch");
+                        if (!string.IsNullOrEmpty(liveBranch)) defaultBranch = liveBranch;
+                        Dictionary<string, object> githubLicense = GetDictionary(github, "license");
+                        string liveLicense = githubLicense == null ? "" : GetString(githubLicense, "spdx_id");
+                        if (!string.IsNullOrEmpty(liveLicense)) licenseIdentifier = liveLicense;
+                    }
+                    if (!string.IsNullOrEmpty(defaultBranch))
+                    {
+                        Dictionary<string, object> commitResponse = await GitHubApiAsync(
+                            "/repos/" + fullName + "/commits/" + Uri.EscapeDataString(defaultBranch), token, false) as Dictionary<string, object>;
+                        string resolvedCommit = commitResponse == null ? "" : GetString(commitResponse, "sha");
+                        if (IsHexDigest(resolvedCommit, 40)) sourceSha = resolvedCommit;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog("Unpinned DSHMK GitHub resolution fell back to the catalog branch: " + ex.Message);
+                }
+                if (string.IsNullOrEmpty(defaultBranch)) defaultBranch = "main";
+                sourceRef = defaultBranch;
+                if (IsHexDigest(sourceSha, 40))
+                {
+                    version = "0.0.0-" + sourceSha.Substring(0, 12);
+                    artifactUrl = "https://codeload.github.com/" + fullName + "/tar.gz/" + sourceSha;
+                    artifactFileName = SafeCommunityFileName(fullName.Replace('/', '-') + "-" + sourceSha.Substring(0, 12) + ".tgz");
+                    auditChecks.Add("resolved default-branch HEAD commit");
+                }
+                else
+                {
+                    version = "0.0.0-unpinned-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+                    artifactUrl = "https://codeload.github.com/" + fullName + "/tar.gz/" + Uri.EscapeDataString(defaultBranch);
+                    artifactFileName = SafeCommunityFileName(fullName.Replace('/', '-') + "-" + defaultBranch.Replace('/', '-') + ".tgz");
+                    auditChecks.Add("default branch archive");
+                }
+                auditChecks.Add("user-confirmed unpinned GitHub source");
+            }
         }
 
         PostHubProgress(requestId, "download", 28, "正在下载并校验插件资产。", artifactFileName);
@@ -3235,7 +3383,7 @@ internal sealed class MainForm : Form
             { "signature", new Dictionary<string, object>
                 {
                     { "status", "unsigned" },
-                    { "signer", source == "npm" ? "npm registry package; no artifact signature declared." : "Pinned GitHub source archive; no artifact signature declared." }
+                     { "signer", source == "npm" ? "npm registry package; no artifact signature declared." : userApprovedUnpinned ? "User-confirmed GitHub default-branch source; no artifact signature declared." : "Pinned GitHub source archive; no artifact signature declared." }
                 } },
             { "audit", new Dictionary<string, object>
                 {
@@ -3277,9 +3425,24 @@ internal sealed class MainForm : Form
             throw new InvalidOperationException("The npm package repository does not match the DSHMK project identity.");
     }
 
-    private Dictionary<string, object> VerifyDshmkProfileActivation(Dictionary<string, object> repository, string profile, string packageSpec, HashSet<string> dependenciesBefore)
+    private static string ResolveSetupArtifactSha256(Dictionary<string, object> manifest)
     {
-        string packageFile = Path.Combine(ResolveProfileDirectory(profile), "package.json");
+        Dictionary<string, object> install = GetDictionary(manifest, "install") ?? new Dictionary<string, object>();
+        string artifactId = GetString(install, "artifactId");
+        foreach (object value in GetArray(manifest, "artifacts") ?? new object[0])
+        {
+            Dictionary<string, object> artifact = value as Dictionary<string, object>;
+            if (artifact == null || !string.Equals(GetString(artifact, "id"), artifactId, StringComparison.Ordinal)) continue;
+            string sha256 = GetString(artifact, "sha256");
+            return IsHexDigest(sha256, 64) ? sha256 : "";
+        }
+        return "";
+    }
+
+    private Dictionary<string, object> VerifyDshmkProfileActivation(Dictionary<string, object> repository, string profile, string packageSpec, HashSet<string> dependenciesBefore, string resolvedSourceCommit, string artifactSha256)
+    {
+        string profileDirectory = ResolveProfileDirectory(profile);
+        string packageFile = Path.Combine(profileDirectory, "package.json");
         if (!File.Exists(packageFile)) throw new InvalidOperationException("The DSH Web Profile manifest was not created.");
         JavaScriptSerializer serializer = new JavaScriptSerializer();
         Dictionary<string, object> package = serializer.DeserializeObject(File.ReadAllText(packageFile, Encoding.UTF8)) as Dictionary<string, object>;
@@ -3289,30 +3452,87 @@ internal sealed class MainForm : Form
         Dictionary<string, object> profileConfig = GetDictionary(dsh, "profile") ?? new Dictionary<string, object>();
         HashSet<string> bundles = new HashSet<string>(GetRawStringArray(profileConfig, "bundles"), StringComparer.OrdinalIgnoreCase);
         Dictionary<string, object> validation = GetDictionary(repository, "validation") ?? new Dictionary<string, object>();
-        string sourceSha = GetString(validation, "sourceSha");
+        string sourceSha = IsHexDigest(resolvedSourceCommit, 40) ? resolvedSourceCommit : GetString(validation, "sourceSha");
         string fullName = GetString(repository, "fullName");
         string npmName = ResolveNpmPackageName(packageSpec);
         List<string> installedPackages = new List<string>();
         List<string> activeBundles = new List<string>();
+        HashSet<string> compatibilityPackages = ReadGeneratedWebClientCompatibility(profile);
         foreach (KeyValuePair<string, object> dependency in dependencies)
         {
             string spec = Convert.ToString(dependency.Value) ?? "";
             bool matches = !dependenciesBefore.Contains(dependency.Key)
                 || (!string.IsNullOrEmpty(npmName) && string.Equals(dependency.Key, npmName, StringComparison.OrdinalIgnoreCase))
                 || (!string.IsNullOrEmpty(fullName) && spec.IndexOf(fullName, StringComparison.OrdinalIgnoreCase) >= 0)
-                || (IsHexDigest(sourceSha, 40) && spec.IndexOf(sourceSha, StringComparison.OrdinalIgnoreCase) >= 0);
+                || (IsHexDigest(sourceSha, 40) && spec.IndexOf(sourceSha, StringComparison.OrdinalIgnoreCase) >= 0)
+                || (IsHexDigest(artifactSha256, 64) && spec.IndexOf(artifactSha256, StringComparison.OrdinalIgnoreCase) >= 0)
+                || InstalledDependencyMatchesDshmkSource(profileDirectory, dependency.Key, fullName, sourceSha);
             if (!matches) continue;
             installedPackages.Add(dependency.Key);
-            if (bundles.Contains(dependency.Key)) activeBundles.Add(dependency.Key);
+            if (bundles.Contains(dependency.Key) || compatibilityPackages.Contains(dependency.Key)) activeBundles.Add(dependency.Key);
         }
         if (installedPackages.Count == 0) throw new InvalidOperationException("The package manager completed, but no matching dependency is present in the DSH Web Profile.");
-        if (activeBundles.Count == 0) throw new InvalidOperationException("The dependency exists, but it did not activate as a DSH bundle. Review the package build output and manifest.");
+        if (activeBundles.Count == 0) throw new InvalidOperationException("The dependency exists, but it did not activate as a DSH bundle or Web client component. Review the package build output and manifest.");
         return new Dictionary<string, object>
         {
             { "status", "activated" }, { "profile", profile },
             { "packageNames", installedPackages.ToArray() }, { "activeBundles", activeBundles.ToArray() },
             { "verifiedAt", DateTime.UtcNow.ToString("o") }, { "profilePath", ResolveProfileDirectory(profile) }
         };
+    }
+
+    private static bool InstalledDependencyMatchesDshmkSource(string profileDirectory, string packageName, string fullName, string sourceSha)
+    {
+        if (string.IsNullOrWhiteSpace(packageName) || string.IsNullOrWhiteSpace(fullName)) return false;
+        string nodeModules = Path.GetFullPath(Path.Combine(profileDirectory, "node_modules"));
+        string packageDirectory = Path.GetFullPath(Path.Combine(nodeModules, packageName.Replace('/', Path.DirectorySeparatorChar)));
+        string nodeModulesPrefix = nodeModules.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!packageDirectory.StartsWith(nodeModulesPrefix, StringComparison.OrdinalIgnoreCase)) return false;
+        string packageFile = Path.Combine(packageDirectory, "package.json");
+        if (!File.Exists(packageFile)) return false;
+        try
+        {
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            Dictionary<string, object> installed = serializer.DeserializeObject(File.ReadAllText(packageFile, Encoding.UTF8)) as Dictionary<string, object>;
+            if (installed == null) return false;
+            List<string> identities = new List<string>();
+            AddPackageSourceIdentity(identities, GetValue(installed, "repository"));
+            AddPackageSourceIdentity(identities, GetValue(installed, "homepage"));
+            AddPackageSourceIdentity(identities, GetValue(installed, "bugs"));
+            AddPackageSourceIdentity(identities, GetValue(installed, "_resolved"));
+            string expected = fullName.Trim().Trim('/').Replace('\\', '/').ToLowerInvariant();
+            foreach (string identityValue in identities)
+            {
+                string identity = identityValue.Replace('\\', '/').ToLowerInvariant();
+                if (identity.IndexOf("github.com/" + expected, StringComparison.Ordinal) >= 0
+                    || identity.IndexOf("github.com:" + expected, StringComparison.Ordinal) >= 0
+                    || identity.IndexOf("github:" + expected, StringComparison.Ordinal) >= 0)
+                    return true;
+                if (IsHexDigest(sourceSha, 40) && identity.IndexOf(sourceSha.ToLowerInvariant(), StringComparison.Ordinal) >= 0)
+                    return true;
+            }
+        }
+        catch
+        {
+        }
+        return false;
+    }
+
+    private static void AddPackageSourceIdentity(List<string> identities, object value)
+    {
+        string text = value as string;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            identities.Add(text);
+            return;
+        }
+        Dictionary<string, object> record = value as Dictionary<string, object>;
+        if (record == null) return;
+        foreach (string key in new string[] { "url", "repository", "homepage" })
+        {
+            string candidate = GetString(record, key);
+            if (!string.IsNullOrWhiteSpace(candidate)) identities.Add(candidate);
+        }
     }
 
     private static string ResolveNpmPackageName(string packageSpec)
@@ -3334,11 +3554,14 @@ internal sealed class MainForm : Form
         string workspace = Path.Combine(HubLibraryRoot, SafeHubId(GetString(manifest, "id")));
         Directory.CreateDirectory(workspace);
         JavaScriptSerializer serializer = new JavaScriptSerializer();
+        Dictionary<string, object> source = GetDictionary(manifest, "source") ?? new Dictionary<string, object>();
+        string sourceRevision = GetString(source, "commit");
+        if (string.IsNullOrEmpty(sourceRevision)) sourceRevision = GetString(source, "ref");
         Dictionary<string, object> receipt = new Dictionary<string, object>
         {
             { "schemaVersion", 1 }, { "installedAt", DateTime.UtcNow.ToString("o") },
             { "source", "dshmk" }, { "catalog", DshmkCatalogUrl }, { "repositoryId", GetInteger(repository, "repositoryId") },
-            { "repository", GetString(repository, "url") }, { "sourceRevision", GetString(GetDictionary(repository, "validation"), "sourceSha") },
+            { "repository", GetString(source, "repository") }, { "sourceRevision", sourceRevision },
             { "candidate", candidate }, { "verification", verification },
             { "uninstall", new Dictionary<string, object> { { "profile", GetString(verification, "profile") }, { "packageNames", GetRawStringArray(verification, "packageNames") } } }
         };
@@ -4287,24 +4510,77 @@ internal sealed class MainForm : Form
     private static List<Dictionary<string, object>> ReadInstalledRecords()
     {
         EnsureHubDirectories();
-        if (!File.Exists(HubInstalledFile)) return new List<Dictionary<string, object>>();
+        List<Dictionary<string, object>> records;
+        if (!TryReadInstalledRecordsFile(HubInstalledFile, out records))
+        {
+            string backupFile = HubInstalledFile + ".backup";
+            if (!TryReadInstalledRecordsFile(backupFile, out records)) return new List<Dictionary<string, object>>();
+            WriteTextAtomic(HubInstalledFile, File.ReadAllText(backupFile, Encoding.UTF8));
+        }
+
+        bool changed = false;
+        foreach (Dictionary<string, object> record in records)
+        {
+            string id = SafeHubId(GetString(record, "id"));
+            if (string.IsNullOrEmpty(id)) continue;
+            string expectedWorkspace = Path.Combine(HubLibraryRoot, id);
+            if (!Directory.Exists(expectedWorkspace)) continue;
+            string recordedWorkspace = GetString(record, "workspacePath");
+            if (!PathsEqual(recordedWorkspace, expectedWorkspace))
+            {
+                record["workspacePath"] = expectedWorkspace;
+                changed = true;
+            }
+        }
+        if (changed) WriteInstalledRecords(records);
+        return records;
+    }
+
+    private static bool TryReadInstalledRecordsFile(string path, out List<Dictionary<string, object>> records)
+    {
+        records = new List<Dictionary<string, object>>();
+        if (!File.Exists(path)) return false;
         try
         {
             JavaScriptSerializer serializer = new JavaScriptSerializer();
-            object[] raw = serializer.DeserializeObject(File.ReadAllText(HubInstalledFile, Encoding.UTF8)) as object[];
-            List<Dictionary<string, object>> records = new List<Dictionary<string, object>>();
-            if (raw != null) foreach (object value in raw) { Dictionary<string, object> record = value as Dictionary<string, object>; if (record != null) records.Add(record); }
-            return records;
+            object[] raw = serializer.DeserializeObject(File.ReadAllText(path, Encoding.UTF8)) as object[];
+            if (raw == null) return false;
+            foreach (object value in raw)
+            {
+                Dictionary<string, object> record = value as Dictionary<string, object>;
+                if (record != null) records.Add(record);
+            }
+            return true;
         }
         catch
         {
-            return new List<Dictionary<string, object>>();
+            records.Clear();
+            return false;
+        }
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right)) return false;
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar),
+                Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 
     private static void WriteInstalledRecords(List<Dictionary<string, object>> records)
     {
         JavaScriptSerializer serializer = new JavaScriptSerializer();
+        List<Dictionary<string, object>> existing;
+        if (TryReadInstalledRecordsFile(HubInstalledFile, out existing))
+            WriteTextAtomic(HubInstalledFile + ".backup", File.ReadAllText(HubInstalledFile, Encoding.UTF8));
         WriteTextAtomic(HubInstalledFile, FormatJson(serializer.Serialize(records)));
     }
 
@@ -4340,6 +4616,7 @@ internal sealed class MainForm : Form
             await RemoveProfilePackagesAsync(profile, packages);
             PostHubProgress(requestId, "profile", 72, "依赖已移除，正在更新 Web Profile。", ResolveProfileDirectory(profile));
             RemoveBundlesFromProfile(profile, packages);
+            RemoveGeneratedWebClientCompatibility(profile, packages);
         }
         else throw new InvalidOperationException("This Setup does not declare a safe HUB uninstall method.");
         PostHubProgress(requestId, "activation", 86, "正在清理插件启动引用。", string.Join(", ", verificationNames));
@@ -4436,6 +4713,64 @@ internal sealed class MainForm : Form
         }
         catch { }
         return bundles;
+    }
+
+    private static HashSet<string> ReadGeneratedWebClientCompatibility(string profile)
+    {
+        HashSet<string> packages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string patchFile = Path.Combine(ResolveProfileDirectory(profile), "cordis.patch.yml");
+        if (!File.Exists(patchFile)) return packages;
+        string content;
+        try { content = File.ReadAllText(patchFile, Encoding.UTF8); }
+        catch { return packages; }
+        int start = content.IndexOf(GeneratedClientCompatStart, StringComparison.Ordinal);
+        int end = content.IndexOf(GeneratedClientCompatEnd, start < 0 ? 0 : start, StringComparison.Ordinal);
+        if (start < 0 || end < start) return packages;
+        string section = content.Substring(start, end - start);
+        MatchCollection matches = Regex.Matches(section, "(?m)^\\s*name:\\s*\\\"(?<name>[^\\\"]+)\\\"\\s*$");
+        foreach (Match match in matches)
+        {
+            string name = match.Groups["name"].Value;
+            if (!string.IsNullOrEmpty(name)) packages.Add(name);
+        }
+        return packages;
+    }
+
+    private static void RemoveGeneratedWebClientCompatibility(string profile, string[] packages)
+    {
+        if (packages == null || packages.Length == 0) return;
+        string patchFile = Path.Combine(ResolveProfileDirectory(profile), "cordis.patch.yml");
+        if (!File.Exists(patchFile)) return;
+        string content = File.ReadAllText(patchFile, Encoding.UTF8);
+        int markerStart = content.IndexOf(GeneratedClientCompatStart, StringComparison.Ordinal);
+        int markerEnd = content.IndexOf(GeneratedClientCompatEnd, markerStart < 0 ? 0 : markerStart, StringComparison.Ordinal);
+        if (markerStart < 0 || markerEnd < markerStart) return;
+        int blockStart = content.LastIndexOf('\n', markerStart);
+        blockStart = blockStart < 0 ? 0 : blockStart + 1;
+        int endAfterMarker = markerEnd + GeneratedClientCompatEnd.Length;
+        while (endAfterMarker < content.Length && (content[endAfterMarker] == '\r' || content[endAfterMarker] == '\n')) endAfterMarker++;
+        string section = content.Substring(blockStart, endAfterMarker - blockStart);
+        foreach (string packageName in packages)
+        {
+            if (string.IsNullOrEmpty(packageName)) continue;
+            string quotedName = Regex.Escape("\"" + packageName + "\"");
+            section = Regex.Replace(section,
+                "(?m)^[ \\t]*- id:[^\\r\\n]*\\r?\\n[ \\t]*name:\\s*" + quotedName + "\\s*\\r?\\n",
+                "");
+        }
+        string replacement;
+        if (Regex.IsMatch(section, "(?m)^\\s{4}- id:"))
+        {
+            replacement = section;
+        }
+        else
+        {
+            replacement = "";
+        }
+        string updated = content.Substring(0, blockStart) + replacement + content.Substring(endAfterMarker);
+        if (replacement.Length == 0 && !Regex.IsMatch(updated, "(?m)^\\s*(?:-|\\[)"))
+            updated = updated.TrimEnd() + Environment.NewLine + "[]" + Environment.NewLine;
+        if (!string.Equals(updated, content, StringComparison.Ordinal)) WriteTextAtomic(patchFile, updated);
     }
 
     private static void RemoveBundlesFromProfile(string profile, string[] packages)

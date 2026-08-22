@@ -1,20 +1,22 @@
 ---
 name: Idea
-about: 记录尚未承诺实施、但具有行动可能的想法
+about: Record an uncommitted idea with a possible action path
 title: ''
 labels: ''
 assignees: ''
 type: Idea
 ---
 
-<!-- 标题写中文行动或结果句；外露正文不超过 50 单位。 -->
-一句话说明价值假设。
+English | [中文](idea.zh.md)
+
+<!-- Write the title as an action or result sentence; keep the visible body under 50 units. -->
+Describe the value hypothesis in one sentence.
 
 <details>
-<summary>价值与细节</summary>
+<summary>Value and details</summary>
 
-- 价值假设：
-- 需要验证：
-- 可能的后续工作：
+- Value hypothesis:
+- What needs validation:
+- Possible follow-up work:
 
 </details>

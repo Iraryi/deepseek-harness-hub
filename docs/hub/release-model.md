@@ -1,5 +1,7 @@
 # Release Model
 
+[中文](release-model.zh.md)
+
 HUB and Desktop assets use the same semantic version tag during the preview period.
 
 ## Channels

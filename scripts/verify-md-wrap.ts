@@ -38,13 +38,26 @@ interface Violation {
 
 function maskVitePressStructure(source: string): string {
   const lines = source.split('\n')
+  let inGitHubAlert = false
   if (lines[0] === '---') {
     const closing = lines.indexOf('---', 1)
     if (closing !== -1) {
       for (let index = 0; index <= closing; index++) lines[index] = ''
     }
   }
-  return lines.map(line => line.trimStart().startsWith(':::') ? '' : line).join('\n')
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index]?.trimStart() ?? ''
+    if (trimmed.startsWith('> [!')) inGitHubAlert = true
+    if (inGitHubAlert) {
+      if (trimmed === '' || trimmed.startsWith('>')) {
+        lines[index] = ''
+        continue
+      }
+      inGitHubAlert = false
+    }
+    if (trimmed.startsWith(':::')) lines[index] = ''
+  }
+  return lines.join('\n')
 }
 
 /** Find every hard-wrapped prose paragraph in one Markdown file via its AST. */

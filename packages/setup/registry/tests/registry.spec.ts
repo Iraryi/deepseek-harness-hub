@@ -52,13 +52,33 @@ describe('Setup registry', () => {
     await expect(fetchSetupRegistry('https://example.com/dsh-setups.json', undefined, fetcher)).rejects.toThrow('must be JSON')
   })
 
-  it('parses every Setup shipped in the Web catalog', () => {
+  it('rejects unknown fields, missing metrics, and duplicate manifest IDs', () => {
+    const invalid = {
+      ...index,
+      unexpected: true,
+      entries: [
+        { manifest, metrics: { stars: 1, unexpected: true } },
+        { manifest: { ...manifest, id: manifest.id }, metrics: {} },
+      ],
+    }
+    expect(() => parseSetupRegistry(invalid)).toThrowError(/unexpected/)
+
+    const missingMetrics = { ...index, entries: [{ manifest }] }
+    expect(() => parseSetupRegistry(missingMetrics)).toThrowError(/metrics.*required/)
+  })
+
+  it('parses the canonical catalog and its Web mirror', () => {
+    const canonical = JSON.parse(readFileSync('registry/catalog.json', 'utf8')) as unknown
     const shipped = JSON.parse(readFileSync('apps/web/public/setup/registry.json', 'utf8')) as unknown
-    const parsed = parseSetupRegistry(shipped)
-    expect(parsed.entries.map(entry => entry.manifest.id)).toEqual([
+    const canonicalParsed = parseSetupRegistry(canonical)
+    const shippedParsed = parseSetupRegistry(shipped)
+    const expectedIds = [
       'dsh-full-capability-pack',
       'cakeni-harness-pet',
       'yuuu0109-dsh-cache-hit-decimal',
-    ])
+    ]
+    expect(canonicalParsed.entries.map(entry => entry.manifest.id)).toEqual(expectedIds)
+    expect(shippedParsed.entries.map(entry => entry.manifest.id)).toEqual(expectedIds)
+    expect(canonical).toEqual(shipped)
   })
 })

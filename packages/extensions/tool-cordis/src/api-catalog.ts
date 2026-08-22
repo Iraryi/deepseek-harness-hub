@@ -2078,16 +2078,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the disposer releasing the seat.',
       },
       {
-        signature: 'tapIndex(transform: (html: string) => string): () => void',
+        signature: 'tapIndex(transform: WebIndexTransform): () => void',
         description: 'Register an index.html transform, applied by the fallback owner to every index response (applyIndexTaps) in registration order.',
-        parameters: [{ name: 'transform', description: 'pure html-to-html function.' }],
+        parameters: [{ name: 'transform', description: 'ordered html-to-html function, optionally asynchronous.' }],
         returns: 'the disposer removing the transform.',
       },
       {
-        signature: 'applyIndexTaps(html: string): string',
+        signature: 'async applyIndexTaps(html: string): Promise<string>',
         description: 'Run an index.html body through the registered taps in registration order — called by the fallback owner on every index response it renders.',
         parameters: [{ name: 'html', description: 'the raw index.html body.' }],
-        returns: 'the transformed body.',
+        returns: 'the transformed body after every tap settles in registration order.',
       },
     ],
   },
@@ -4556,6 +4556,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WebFetchResultView',
     declaration: 'export interface WebFetchResultView {\n    card: \'web\';\n    kind: \'fetch\';\n    title?: string;\n    url: string;\n    statusCode: number;\n    truncated: boolean;\n}',
+  },
+  {
+    name: 'WebIndexTransform',
+    declaration: 'export type WebIndexTransform = (html: string) => string | Promise<string>;',
   },
   {
     name: 'WebResultView',

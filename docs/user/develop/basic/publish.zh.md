@@ -4,7 +4,7 @@
 
 前几篇教程通过 `--patch` overlay 加载本地插件。本教程把它打包成可安装的**组合包**（bundle），用 `dsh plugin add` 安装进一个 **profile**，并解释决定组合后配置的层顺序。本文假设 `dsh` CLI 已安装。请先完成[插件配置](./config.md)。
 
-如果改用全新的源码 checkout，请先按照[从源码运行章节](../../../../README.md#run-from-source)完成准备，将本教程的 `hello-plugin` 目录放在仓库根目录，并从该目录把下文的 `dsh ...` 命令改为 `pnpm dsh ...`。构建与启动器行为见[源码执行](../../../../apps/cli/reference/README.md#source-execution)。
+如果改用全新的源码 checkout，请先按照[从源码运行章节](../../../implementation/README.zh.md#从源码运行)完成准备，将本教程的 `hello-plugin` 目录放在仓库根目录，并从该目录把下文的 `dsh ...` 命令改为 `pnpm dsh ...`。构建与启动器行为见[源码执行](../../../../apps/cli/reference/README.md#source-execution)。
 
 ## 两个概念，两种 manifest
 
@@ -61,7 +61,7 @@ export function apply() {
       name: dsh-hello-plugin
 ```
 
-没有 `dsh.bundle` 声明的包仍然可以安装，但只作为普通依赖：`dsh plugin` 会打印警告，且不激活任何层。如果一个库供插件包 import，而不是供用户启用，就使用这种包格式。
+没有 `dsh.bundle` 声明的包通常作为普通依赖安装。只面向 Web 客户端的包可以改为声明 `dsh.client.platform: "web"`、导出 `./client` 并实际附带该文件；此时 `dsh plugin` 会写入由 HUB 管理的兼容条目，让浏览器 bundle 可被发现，但不会把它误当成服务端 profile 组合包。既不符合组合包形式、也不符合这一组 Web 客户端条件的包仍是普通依赖，不会激活任何层。
 
 ### profile manifest
 

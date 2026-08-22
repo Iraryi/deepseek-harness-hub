@@ -90,19 +90,19 @@ registerFallback(handler: WebRoute['handler']): () => void
 /**
  * Register an index.html transform, applied by the fallback owner to every
  * index response ({@link applyIndexTaps}) in registration order.
- * @param transform - pure html-to-html function.
+ * @param transform - ordered html-to-html function, optionally asynchronous.
  * @returns the disposer removing the transform.
  */
-tapIndex(transform: (html: string) => string): () => void
+tapIndex(transform: WebIndexTransform): () => void
 
 /**
  * Run an index.html body through the registered taps in registration order
  * — called by the fallback owner on every index response it renders.
  * @param html - the raw index.html body.
- * @returns the transformed body.
+ * @returns the transformed body after every tap settles in registration order.
  */
-applyIndexTaps(html: string): string
+async applyIndexTaps(html: string): Promise<string>
 ```
 
-Source: [`packages/host/webserver/src/index.ts:59`](../../packages/host/webserver/src/index.ts)
+Source: [`packages/host/webserver/src/index.ts:62`](../../packages/host/webserver/src/index.ts)
 <!-- END GENERATED cordis-surface -->

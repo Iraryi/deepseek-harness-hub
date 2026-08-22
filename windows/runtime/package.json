@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-windows-runtime",
   "description": "Dependency-only deploy root for the self-contained Windows desktop runtime.",
-  "version": "0.1.0-rc.7",
+  "version": "0.1.0-rc.7-hotfix.1",
   "private": true,
   "type": "module",
   "files": [],

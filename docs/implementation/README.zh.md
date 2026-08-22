@@ -12,7 +12,7 @@ DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**
 
 ## Windows 桌面版
 
-本仓库同时承载 Windows 桌面发行层源码，包括原生 WebView2 宿主、独立 CONFIG 程序、运行时打包与集成测试。面向用户的 Setup、HUB 目录与生态文档统一发布在 [DeepSeek Harness HUB](https://github.com/Iraryi/deepseek-harness-hub)；实现细节见 [Windows 参考文档](windows/README.md)。
+本仓库同时承载 Windows 桌面发行层源码，包括原生 WebView2 宿主、独立 CONFIG 程序、运行时打包与集成测试。面向用户的 Setup、HUB 目录与生态文档统一发布在 [DeepSeek Harness HUB](https://github.com/Iraryi/deepseek-harness-hub)；实现细节见 [Windows 参考文档](../../windows/README.zh.md)。
 
 ## 运行
 
@@ -24,7 +24,7 @@ DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**
 npx @deepseek-ai/dsh web
 ```
 
-该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
+该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](../user/guide/index.zh.md)。
 
 ### 从源码运行
 
@@ -67,12 +67,12 @@ pnpm dsh web
 
 ## 开发
 
-请先阅读[开发指南](docs/development.md)与[架构文档](docs/architecture.md)。
+请先阅读[开发指南](../development.zh.md)与[架构文档](../architecture.zh.md)。
 
-面向 agent：请遵循 [AGENTS.md](AGENTS.md)。
+面向 agent：请遵循 [AGENTS.md](../../AGENTS.md)。
 
 ## 许可证
 
 [MIT](LICENSE)
 
-第三方依赖及其许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+第三方依赖及其许可证见 [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md)。

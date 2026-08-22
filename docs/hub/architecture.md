@@ -1,5 +1,7 @@
 # Architecture
 
+[中文](architecture.zh.md)
+
 DeepSeek Harness HUB separates discovery, evidence, installation, and runtime ownership so that a marketplace result never silently becomes an installation claim.
 
 ## Data flow

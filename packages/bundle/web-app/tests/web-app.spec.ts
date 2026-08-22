@@ -5,7 +5,7 @@
  * runtime's bind-dependent LAN snapshot.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -70,6 +70,16 @@ interface BashContribution {
 }
 
 describe('web-app runtime glue', () => {
+  it('keeps the HUB client plugin in the shipped Web roster', () => {
+    const patch = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      dependencies?: Record<string, string>
+    }
+
+    expect(manifest.dependencies?.['@deepseek-ai/dsh-client-ui-setup-hub']).toBe('workspace:^')
+    expect(patch).toContain("- id: ui-setup-hub\n      name: '@deepseek-ai/dsh-client-ui-setup-hub'")
+  })
+
   it('mounts dist serving, prompt section, bash variables, and prints the URL with the LAN snapshot', async () => {
     stageDist()
     const ctx = new Context()

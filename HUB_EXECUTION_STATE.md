@@ -17,6 +17,17 @@ Status date: 2026-08-21
 
 This checkpoint is complete for the `v0.1.0-rc.7` release candidate. The clean-install regression gate was rerun with isolated data and process scopes, the new Full/Lite Setup pair was built, and GitHub publication is authorized. Preserve `v0.1.0-rc.6`; publish `v0.1.0-rc.7` as a new release.
 
+## Repository audit checkpoint — 2026-08-22
+
+- Audited the repository outside GitHub Release assets and found a protocol split: `registry/catalog.json` used the retired direct-entry fields `summary`, `publisher`, `trust`, `requirements`, and command-based install modes, while the runtime consumes `SetupListing` entries through `packages/setup/protocol` and `packages/setup/registry`.
+- Replaced the retired catalog with the current three-entry Registry v1 payload and made `apps/web/public/setup/registry.json` an identical byte-for-byte mirror. The validator now rejects legacy fields, checks artifact references, validates both mirrors, and still checks Setup Workspace examples.
+- Added `registry/schema/setup-registry.schema.json` and aligned `registry/schema/setup-package.schema.json`, `examples/setup-package/manifest.json`, and HUB documentation with the runtime protocol. Discovery-only DSHMK and GitHub records are not represented as installable Setup entries without a concrete verified manifest.
+- Repaired all repository Markdown links, including the broken schema references in `docs/hub`, stale copied upstream CI links through `docs/implementation/github`, and invalid root README anchors in the user guides.
+- Tightened the runtime Setup protocol and Registry parser to match the JSON Schemas: retired and unknown fields are rejected, nested error paths are stable, category/tag/surface/platform values are constrained, artifact and manifest IDs are unique, Registry metrics are required, and timestamps use ISO date-time validation. Focused TypeScript builds and 65 protocol/Registry/translation tests pass.
+- Completed the repository-wide bilingual documentation contract instead of weakening it: added missing `docs/hub` and GitHub-template counterparts, recorded all new sidecar hashes, and normalized localized Markdown targets so `.zh.md` links and translated fragments compare by semantic target. `verify-translation-pairing` now checks 962 pairs successfully.
+- Final non-RELEASE gates pass: Markdown links, documentation references, hard-wrap policy, Cordis generated catalog freshness, translation prompt, HUB catalog/schema validation, and canonical/Web catalog byte equality.
+- No GitHub Release asset, Release note, upstream repository, installed product, or user data was changed in this checkpoint.
+
 ## Final rc.7 release checkpoint — 2026-08-21
 
 - Fixed CONFIG `Save & Launch` handoff. Explorer no longer receives application arguments as if they were filesystem paths; CONFIG creates a temporary Windows Shell shortcut containing the exact data directory, `DSH_HOME`, and instance scope, then asks Explorer to launch that shortcut.
@@ -249,6 +260,19 @@ This checkpoint is complete for the `v0.1.0-rc.7` release candidate. The clean-i
 
 Result: complete. The Runtime build, Runtime smoke, isolated installed-directory WebView smoke, DSHMK offline smoke, DSHMK packaged installation and retry smoke, Desktop reload smoke, bounded retained-profile startup recovery, Full and Lite Setup compilation, installation and uninstall smoke, portable smoke, relevant documentation, diff inspection, manifest verification, and owned-process cleanup all pass. The final local release output is `windows/release/dist-vm-regression-final` and includes the current startup-recovery, DSHMK package-manager, onboarding, window-geometry, environment-variable, runtime-pnpm, icon, and localization fixes. GitHub upload remains intentionally disabled for this checkpoint.
 
+## HUB executable surface activation checkpoint — 2026-08-22
+
+- Root cause confirmed: `dsh-hub.exe` correctly selected HUB native mode and appended `dshSurface=hub`, but `packages/bundle/web-app/cordis.patch.yml` did not mount `@deepseek-ai/dsh-client-ui-setup-hub` in the shipped browser roster. The runtime package alone was insufficient because the Web loader never created the HUB client entry.
+- Added the HUB client package to `dsh-web-app` dependencies and the `ui-setup-hub` browser roster row. Ordinary `dsh.exe` launches keep the same shared profile but do not activate the HUB overlay because the URL has no `dshSurface=hub` token.
+- Added a focused bundle regression that checks both the dependency declaration and the roster row. The fix requires rebuilding the frontend, Runtime, Launcher, and any Setup artifact that embeds them; no GitHub upload or user-installation overwrite is implied by this checkpoint.
+
+## Uninstall data-policy confirmation checkpoint — 2026-08-22
+
+- Replaced the uninstaller's ambiguous single Yes/No data-deletion question with a dedicated custom dialog in `windows/setup/DeepSeekHarness.iss`.
+- The dialog defaults to `Keep user data`; `Delete user data` is a separate radio choice. The bottom `Yes` button confirms uninstall and `No` exits without uninstalling.
+- Standard user data and portable application data are deleted only when the user explicitly selects the delete-data radio option and confirms with `Yes`.
+- Added the implemented bilingual Agent Note `2026-08-22-uninstall-data-policy-confirmation`. Inno Setup 6.7.3 compiled both Full and Lite Setup EXEs from the updated script; no installation overwrite or GitHub upload was performed.
+
 ## Final local VM-regression release checkpoint
 
 - The release pipeline completed with exit code `0` after geometry, Desktop/HUB service-gate, Node recovery, DSHMK installation, Full/Lite Setup compilation, Setup install/uninstall, and portable HTTP smoke checks.
@@ -302,3 +326,48 @@ Result: complete. The Runtime build, Runtime smoke, isolated installed-directory
 - The root `scripts/build-hub.ps1` entry builds the HUB launcher from the root workspace and stages only HUB-facing launcher files; the root catalog validator passes with 8 catalog entries and 1 Setup Workspace example.
 - Formal HUB releases must contain HUB-only Setup artifacts. `dsh.exe`, Desktop shortcuts, and Desktop-only release assets are not valid HUB release contents.
 - The previous remote push was blocked by the GitHub HTTPS route and did not update the HUB repository. Do not claim the corrected root layout is public until a later push is confirmed with `git ls-remote`.
+
+## DSHMK unpinned GitHub installation checkpoint — 2026-08-22
+
+- DSHMK executable GitHub candidates without an exact validated Commit are now classified as `one-click-unpinned`, remain visible in the installable filter, and rank below fixed-Commit candidates.
+- HUB shows an internal confirmation surface before these candidates can start. Cancel sends no install request; confirmation sends `allowUnpinned: true`, and failed-install retry keeps that decision.
+- The native launcher validates the declared repository, resolves the GitHub default branch and current HEAD when available, downloads the resolved Commit archive or falls back to the declared branch archive, then installs through the existing DSH Setup/Profile engine rather than leaving files only in `hub/library`.
+- Generated manifests and install receipts retain the actual repository, branch/Commit, audit decision, asset URL, byte count, and SHA-256. Profile activation verification accepts the resolved Commit for an unpinned install.
+- Added bilingual Agent Note `2026-08-22-unpinned-github-dshmk-install`. Setup EXEs, the installed user directory, and GitHub were not modified in this implementation checkpoint.
+
+## Web client-only compatibility activation checkpoint — 2026-08-22
+
+- The reported Setup failure for `@agent-hub/dsh-workspace-file-upload` was caused by a valid Web client package without `dsh.bundle`, not by a failed package download. The package declares `dsh.client.platform: "web"`, exports `./client`, and contains the built client file.
+- The CLI now generates a marked HUB-owned compatibility section in the Web profile patch for exactly that package shape. It preserves user-authored rows, is idempotent, removes stale rows after uninstall, and rejects missing or package-external client files.
+- Native HUB activation verification accepts either a real `dsh.bundle` or a matching generated compatibility entry. Ordinary bundle-less dependencies remain ordinary dependencies.
+- Added bilingual Agent Note `2026-08-22-web-client-compatibility-activation` and updated the publish tutorial to describe both supported package forms.
+- Focused built-bin regression, CLI TypeScript compilation, and host library build pass.
+
+## Real DSHMK Web-client installation verification — 2026-08-22
+
+- The screenshot failure was reproduced against `shililinghu/dsh-file-upload-deepseek-harness-plug-in`, whose installed dependency name is `@agent-hub/dsh-workspace-file-upload` and whose Profile dependency value is a cached local `.tgz` path.
+- The package and generated compatibility row were already present; HUB incorrectly reported no matching dependency on repeated installation because it compared only the new-dependency set, package spec, repository text in the cached path, and full Commit.
+- Native verification now reads each installed dependency's `package.json` and matches its `repository`, `homepage`, `bugs`, or `_resolved` identity to the DSHMK GitHub repository. This preserves strict source attribution while supporting renamed packages and cached archive paths.
+- The real DSHMK smoke installs `DSH-better-sidebar` twice and `shililinghu/dsh-file-upload-deepseek-harness-plug-in` twice through the bundled Setup CLI. Both first and repeated Web-client installs return `activated`, report `@agent-hub/dsh-workspace-file-upload`, keep exactly one compatibility block, and keep exactly one HUB record for that Setup.
+- The focused CLI E2E passes, Launcher compilation passes, and the complete Full/Lite Setup install, first-run, upgrade, locked-Node uninstall, data-preservation, reinstall, and Lite smoke passes.
+- Final local Setup outputs are under `windows/setup/dist-fix-web-client-20260822-r3`. Full SHA-256: `86419a3f0a0014baf56176f9f891791e4e67191fbb5027a57da1e99c1b1aac6f`; Lite SHA-256: `f62ac80a4c43c87cc5eb3cfa7958bcb83f6eeff26a036cf439f2c2e9e5e4236e`.
+- No GitHub upload or user installation-directory overwrite was performed.
+
+## Extended DSHMK matrix and Setup rebuild checkpoint — 2026-08-22
+
+- Fixed repeated-install verification for pinned GitHub archives whose Profile dependency spec is only a content-addressed local `.tgz` path. Verification now also carries the Setup artifact SHA-256, while retaining package metadata and source-commit attribution checks.
+- Installation actions now use a dedicated DSHMK install fallback. If a live catalog entry loses its single executable candidate or becomes ambiguous, HUB preserves the current detail data but restores an installable candidate from the previous in-session or bundled snapshot.
+- Extended real-plugin matrix passed for `dsh-ads`, `dsh-visualize`, `dsh-noema`, `dsh-dafeiyu`, `dsh-undo-savepoint`, `dsh-reasoning-effort`, `dsh-cost-meter`, and `dsh-automation`; every sample passed first install, repeated install, activation, package-set stability, and single HUB-record checks. The existing sidebar and Web-client upload cases also passed.
+- The stale `dsh-mobile-adaptive` npm catalog candidate was exercised as a negative case. Its npm `latest` endpoint returned HTTP 404; HUB terminated with an explicit error and created no installed record instead of leaving a busy or partial operation.
+- Rebuilt Launcher output: `windows/launcher/dist-dshmk-matrix-20260822`. Rebuilt Full/Lite Setup output: `windows/setup/dist-fix-web-client-20260822-r4`. Full SHA-256: `2a490279ce3a026cfeaf0391ddebdca5f5fe8cc1083980f9133f62ff99da6b46`; Lite SHA-256: `def09f1ac8771ed360e9a1345220e2dccf96d659a531b8f5ecbf62e4a3e86aeb`.
+- The r4 Full/Lite Setup smoke passed installation, bundled Runtime and package-manager checks, first-run/upgrade paths, uninstall and data-policy checks, and cleanup. `git diff --check` passed and no DSH or Node process remained afterward.
+- No GitHub upload, commit, or real user installation-directory overwrite was performed.
+
+## HUB installed-library persistence hotfix — 2026-08-22
+
+- Release version is `0.1.0-rc.7-hotfix.1`; the intended Git tag is `v0.1.0-rc.7-hotfix.1` and the prior `v0.1.0-rc.7` release remains intact.
+- Portable data identity survives keep-data uninstall through `portable.mode` and `data/.dsh-portable-data`. The launcher also recognizes retained legacy `config.json`, `hub`, or `dsh` content when an older uninstaller removed the marker.
+- Setup creates the portable data directory before writing its identity marker, preserves all HUB user data during update and default uninstall, and removes both data and markers only when delete-data is explicitly requested.
+- Installed Setup records retain one valid backup, recover from a damaged primary index, and rebind existing workspaces to the active HUB library root.
+- Focused validation passed standard update retention, standard keep-data uninstall, two portable keep-data uninstall/reinstall cycles with both markers intentionally removed, native HUB snapshot loading, backup recovery, workspace rebinding, and explicit delete-data cleanup.
+- Final Full/Lite Setup and Runtime assets are built under `windows/setup/dist-v0.1.0-rc.7-hotfix.1`, `windows/launcher/dist-v0.1.0-rc.7-hotfix.1`, and `windows/runtime/dist`.

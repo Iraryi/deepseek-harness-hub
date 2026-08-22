@@ -124,9 +124,9 @@ type HubDetailContent = 'native' | 'original'
 
 type DshmkInstallSurface =
   | { readonly status: 'idle' }
-  | { readonly status: 'running'; readonly project: HubDshmkProject; readonly progress: HubInstallProgress; readonly logs: readonly HubInstallProgress[] }
-  | { readonly status: 'success'; readonly project: HubDshmkProject; readonly result: HubDshmkInstallResult; readonly logs: readonly HubInstallProgress[] }
-  | { readonly status: 'error'; readonly project: HubDshmkProject; readonly message: string; readonly logs: readonly HubInstallProgress[] }
+  | { readonly status: 'running'; readonly allowUnpinned: boolean; readonly project: HubDshmkProject; readonly progress: HubInstallProgress; readonly logs: readonly HubInstallProgress[] }
+  | { readonly status: 'success'; readonly allowUnpinned: boolean; readonly project: HubDshmkProject; readonly result: HubDshmkInstallResult; readonly logs: readonly HubInstallProgress[] }
+  | { readonly status: 'error'; readonly allowUnpinned: boolean; readonly project: HubDshmkProject; readonly message: string; readonly logs: readonly HubInstallProgress[] }
 
 type CommunityInstallSurface =
   | { readonly status: 'idle' }
@@ -674,6 +674,7 @@ function DshmkDiscovery(props: {
   const [detail, setDetail] = useState<AsyncState<HubDshmkDetail>>({ status: 'idle' })
   const [liveMetadata, setLiveMetadata] = useState<Readonly<Record<string, HubDshmkLiveMetadata>>>({})
   const [installSurface, setInstallSurface] = useState<DshmkInstallSurface>({ status: 'idle' })
+  const [unpinnedConfirmation, setUnpinnedConfirmation] = useState<HubDshmkProject | undefined>()
   const scrollPosition = useRef(0)
 
   useEffect(() => subscribeHubCatalogUpdates(() => { setRequestVersion(version => version + 1) }), [])
@@ -733,11 +734,10 @@ function DshmkDiscovery(props: {
       if (host !== null) host.scrollTop = scrollPosition.current
     })
   }
-  const installProject = (project: HubDshmkProject): void => {
-    if (dshmkInstallMode(project) !== 'one-click') return
+  const startInstall = (project: HubDshmkProject, allowUnpinned: boolean): void => {
     const initial: HubInstallProgress = { detail: project.install.candidate.command ?? '', message: props.t('setupStagePreflightBody'), percent: 4, stage: 'preflight', timestamp: new Date().toISOString() }
-    setInstallSurface({ status: 'running', project, progress: initial, logs: [initial] })
-    void props.requestHub<HubDshmkInstallResult>('dshmk-install', { repositoryId: project.repositoryId }, {
+    setInstallSurface({ status: 'running', allowUnpinned, project, progress: initial, logs: [initial] })
+    void props.requestHub<HubDshmkInstallResult>('dshmk-install', { allowUnpinned, repositoryId: project.repositoryId }, {
       onProgress: (progress) => {
         setInstallSurface(current => current.status !== 'running' || current.project.repositoryId !== project.repositoryId
           ? current
@@ -745,13 +745,28 @@ function DshmkDiscovery(props: {
       },
     }).then(
       (result) => {
-        setInstallSurface(current => ({ status: 'success', project, result, logs: current.status === 'running' ? current.logs : [] }))
+        setInstallSurface(current => ({ status: 'success', allowUnpinned, project, result, logs: current.status === 'running' ? current.logs : [] }))
         props.onInstalled()
       },
       (error) => {
-        setInstallSurface(current => ({ status: 'error', project, message: errorMessage(error), logs: current.status === 'running' ? current.logs : [] }))
+        setInstallSurface(current => ({ status: 'error', allowUnpinned, project, message: errorMessage(error), logs: current.status === 'running' ? current.logs : [] }))
       },
     )
+  }
+  const installProject = (project: HubDshmkProject, allowUnpinned = false): void => {
+    const mode = dshmkInstallMode(project)
+    if (mode === 'one-click-unpinned' && !allowUnpinned) {
+      setUnpinnedConfirmation(project)
+      return
+    }
+    if (mode !== 'one-click' && mode !== 'one-click-unpinned') return
+    startInstall(project, allowUnpinned)
+  }
+  const confirmUnpinnedInstall = (): void => {
+    if (unpinnedConfirmation === undefined) return
+    const project = unpinnedConfirmation
+    setUnpinnedConfirmation(undefined)
+    startInstall(project, true)
   }
   const cancelInstall = (): void => {
     if (installSurface.status !== 'running') return
@@ -851,6 +866,7 @@ function DshmkDiscovery(props: {
           t={props.t}
         />
       )}
+      {unpinnedConfirmation === undefined ? null : <DshmkUnpinnedConfirmation onCancel={() => { setUnpinnedConfirmation(undefined) }} onConfirm={confirmUnpinnedInstall} project={unpinnedConfirmation} t={props.t} />}
       {installSurface.status === 'idle' ? null : (
         <SetupProgressSurface
           error={installSurface.status === 'error' ? installSurface.message : undefined}
@@ -860,7 +876,7 @@ function DshmkDiscovery(props: {
           onActivate={props.onRestartDesktop}
           onCancel={cancelInstall}
           onClose={() => { setInstallSurface({ status: 'idle' }) }}
-          onRetry={() => { installProject(installSurface.project) }}
+          onRetry={() => { installProject(installSurface.project, installSurface.allowUnpinned) }}
           progress={installSurface.status === 'running' ? installSurface.progress : undefined}
           reference={installSurface.project.install.candidate.command ?? props.t('localBuildRequired')}
           requestHub={props.requestHub}
@@ -886,7 +902,7 @@ function DshmkCard(props: {
 }): ReactNode {
   const project = props.project
   const installMode = dshmkInstallMode(project)
-  const canInstall = installMode === 'one-click'
+  const canInstall = installMode === 'one-click' || installMode === 'one-click-unpinned'
   const liveStars = project.liveMetadata?.githubStars ?? project.stars
   const body = (
     <>
@@ -926,6 +942,35 @@ function DshmkProjectIcon({ project }: { readonly project: HubDshmkProject }): R
   const [failed, setFailed] = useState(false)
   if (failed || project.owner.avatarUrl.length === 0) return <span className={css.communityAvatar} aria-hidden="true"><IconCordisPluginOutline14 size={18} /></span>
   return <img className={css.communityAvatar} src={project.owner.avatarUrl} alt="" loading="lazy" onError={() => { setFailed(true) }} />
+}
+
+function DshmkUnpinnedConfirmation(props: {
+  readonly onCancel: () => void
+  readonly onConfirm: () => void
+  readonly project: HubDshmkProject
+  readonly t: SetupHubDesktopSurfaceProps['t']
+}): ReactNode {
+  return (
+    <div className={css.unpinnedBackdrop} role="presentation">
+      <section className={css.unpinnedDialog} role="dialog" aria-modal="true" aria-labelledby="dsh-unpinned-title">
+        <span className={css.unpinnedIcon}><IconWarningOutline16 size={22} /></span>
+        <div className={css.unpinnedCopy}>
+          <small>{props.t('unpinnedSourceLabel')}</small>
+          <h2 id="dsh-unpinned-title">{props.t('unpinnedSourceTitle')}</h2>
+          <p>{props.t('unpinnedSourceBody')}</p>
+          <dl>
+            <div><dt>{props.t('source')}</dt><dd>{props.project.fullName}</dd></div>
+            <div><dt>{props.t('defaultBranch')}</dt><dd>{props.project.defaultBranch || 'main'}</dd></div>
+          </dl>
+          <p className={css.unpinnedNotice}>{props.t('unpinnedSourceNotice')}</p>
+        </div>
+        <footer>
+          <button type="button" onClick={props.onCancel}>{props.t('cancelUnpinned')}</button>
+          <button type="button" onClick={props.onConfirm}>{props.t('continueUnpinned')}</button>
+        </footer>
+      </section>
+    </div>
+  )
 }
 
 function DshmkFilterMenu(props: {
@@ -1032,7 +1077,7 @@ function DshmkNativeDetail(props: {
 }): ReactNode {
   const project = props.detail.project
   const installMode = dshmkInstallMode(project)
-  const canInstall = installMode === 'one-click'
+  const canInstall = installMode === 'one-click' || installMode === 'one-click-unpinned'
   const live = project.liveMetadata
   const liveStars = live?.githubStars ?? project.stars
   const stages = Object.entries(project.validation.stages)
@@ -1046,7 +1091,7 @@ function DshmkNativeDetail(props: {
         <article><span>{props.t('stars')}</span><strong>{liveStars}</strong></article>
         <article><span>{props.t('license')}</span><strong>{project.license || 'NOASSERTION'}</strong></article>
         <article><span>{props.t('validationEvidence')}</span><strong>{project.validation.label || project.validation.overall}</strong></article>
-        <article><span>{props.t('sourceCommit')}</span><strong>{project.validation.sourceSha.slice(0, 12) || props.t('notPinned')}</strong></article>
+        <article><span>{props.t('sourceCommit')}</span><strong>{dshmkSourceCommitLabel(project, props.t)}</strong></article>
       </div>
       <section className={css.dshmkLiveMetadata} data-status={live?.status ?? 'unavailable'}>
         <header><h3>{props.t('liveMetadata')}</h3><span>{dshmkLiveStatusLabel(live, props.t)}</span></header>
@@ -1219,15 +1264,32 @@ function setupStageBody(stage: HubInstallProgress['stage']): SetupHubLocaleKey {
 }
 
 function dshmkInstallMode(project: HubDshmkProject): HubDshmkInstallMode {
-  if (project.installMode === 'one-click' || project.installMode === 'reference' || project.installMode === 'ambiguous' || project.installMode === 'local') return project.installMode
-  if (project.installable) return 'one-click'
+  const candidate = project.install.candidate
+  const candidateTarget = candidate.args?.[4] ?? ''
+  const githubCandidate = candidate.source === 'github' || candidateTarget.toLocaleLowerCase().startsWith('github:')
+  const unpinnedGithub = githubCandidate && !isPinnedDshmkCandidate(project)
+  if (project.installMode === 'one-click-unpinned') return 'one-click-unpinned'
+  if (project.installMode === 'one-click') return unpinnedGithub ? 'one-click-unpinned' : 'one-click'
+  if (project.installMode === 'reference' || project.installMode === 'ambiguous' || project.installMode === 'local') return project.installMode
+  if (project.installable) return unpinnedGithub ? 'one-click-unpinned' : 'one-click'
   if (project.install.status === 'ambiguous' || project.install.candidates.length > 1) return 'ambiguous'
   if (project.install.candidate.command || (project.install.candidate.args?.length ?? 0) > 0 || project.install.candidates.length === 1) return 'reference'
   return 'local'
 }
 
+function isPinnedDshmkCandidate(project: HubDshmkProject): boolean {
+  const target = project.install.candidate.args?.[4] ?? ''
+  const sourceSha = project.validation.sourceSha
+  const expected = `github:${project.fullName}#${sourceSha}`
+  return /^[0-9a-f]{40}$/i.test(sourceSha) && target.toLocaleLowerCase() === expected.toLocaleLowerCase()
+}
+
+function dshmkSourceCommitLabel(project: HubDshmkProject, t: SetupHubDesktopSurfaceProps['t']): string {
+  return /^[0-9a-f]{40}$/i.test(project.validation.sourceSha) ? project.validation.sourceSha.slice(0, 12) : t('notPinned')
+}
+
 function dshmkInstallLabel(mode: HubDshmkInstallMode): SetupHubLocaleKey {
-  if (mode === 'one-click') return 'oneClickSetup'
+  if (mode === 'one-click' || mode === 'one-click-unpinned') return 'oneClickSetup'
   if (mode === 'reference') return 'referenceSetup'
   if (mode === 'ambiguous') return 'ambiguousSetup'
   return 'localBuildRequired'

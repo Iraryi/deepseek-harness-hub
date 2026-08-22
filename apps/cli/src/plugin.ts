@@ -1,18 +1,19 @@
 /**
  * `dsh plugin --profile <name> <args...>` — profile plugin management as a
  * thin pnpm forwarder: initialize the profile on first use, run
- * `pnpm <args...>` in the profile directory, then reconcile the
- * `dsh.profile.bundles` layer list against the installed state (a dependency
- * resolving to a package that declares `dsh.bundle` joins the layer stack; a
- * removed or bundle-less dependency leaves it). Reconciling by installed
- * state, not by dependency diff, means `update` activates a package that
- * gained its `dsh.bundle` declaration in a newer version.
+ * `pnpm <args...>` in the profile directory, then reconcile the profile layer
+ * list against the installed state. Packages declaring `dsh.bundle` become
+ * profile layers; narrowly-qualified Web client-only packages receive
+ * HUB-owned compatibility rows so their browser bundles can load without
+ * being treated as server bundles. Other dependencies remain ordinary
+ * dependencies.
  * @module @deepseek-ai/dsh/plugin
  */
 
+import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   DEFAULT_PROFILE_BUNDLES,
   initProfile,
@@ -27,21 +28,127 @@ import { INSTALL_ANCHOR } from './profile-boot.ts'
 
 const NAME = 'dsh'
 
-/**
- * Whether a resolved dependency exports a profile patch, i.e. is a bundle.
- * @param packageName - the dependency's package name.
- * @param profileDir - the profile directory (resolution anchor).
- * @returns true when the package manifest declares `dsh.bundle`.
- */
-function exportsPatch(packageName: string, profileDir: string): boolean {
+const GENERATED_CLIENT_COMPAT_START = '# dsh-hub: generated web-client compatibility:start'
+const GENERATED_CLIENT_COMPAT_END = '# dsh-hub: generated web-client compatibility:end'
+
+interface InstalledPackageManifest extends ProfileManifest {
+  exports?: unknown
+  dsh?: ProfileManifest['dsh'] & {
+    client?: {
+      platform?: unknown
+    }
+  }
+}
+
+interface WebClientCompatibility {
+  packageName: string
+  entryId: string
+}
+
+/** Resolve one installed package manifest from the same anchors as Loader. */
+function installedPackage(
+  packageName: string,
+  profileDir: string,
+): { dir: string; manifest: InstalledPackageManifest } | undefined {
   let dir: string
   try {
     dir = resolveBundleDir(NAME, packageName, INSTALL_ANCHOR, profileDir)
   } catch {
-    return false // pnpm reported success yet the package is unresolvable — treat as plain
+    return undefined
   }
-  const manifest = readProfileManifest(NAME, dir)
-  return manifest.dsh?.bundle?.patch !== undefined
+  return {
+    dir,
+    manifest: readProfileManifest(NAME, dir) as InstalledPackageManifest,
+  }
+}
+
+/** Read the common string form of `exports["./client"]`. */
+function clientExportPath(value: unknown): string | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const client = (value as Record<string, unknown>)['./client']
+  if (typeof client === 'string') return client
+  if (typeof client !== 'object' || client === null) return undefined
+  const fallback = (client as Record<string, unknown>).default
+  return typeof fallback === 'string' ? fallback : undefined
+}
+
+/** Return a narrowly-scoped activation adapter for a Web client-only package. */
+function webClientCompatibility(
+  packageName: string,
+  profileDir: string,
+): WebClientCompatibility | undefined {
+  const installed = installedPackage(packageName, profileDir)
+  const client = installed?.manifest.dsh?.client
+  if (installed === undefined || client?.platform !== 'web') return undefined
+  const clientPath = clientExportPath(installed.manifest.exports)
+  if (clientPath === undefined || !clientPath.startsWith('.')) return undefined
+  const resolvedClientPath = resolve(installed.dir, clientPath)
+  const relativeClientPath = relative(installed.dir, resolvedClientPath)
+  if (isAbsolute(relativeClientPath) || relativeClientPath === '..' || relativeClientPath.startsWith(`..${sep}`)
+    || !existsSync(resolvedClientPath) || !statSync(resolvedClientPath).isFile()) return undefined
+  const digest = createHash('sha1').update(packageName).digest('hex').slice(0, 12)
+  return { packageName, entryId: `dsh-compat-${digest}` }
+}
+
+/** Remove the generated compatibility section without touching user-authored rows. */
+function stripGeneratedClientCompatibility(content: string): string {
+  const escapedStart = GENERATED_CLIENT_COMPAT_START.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const escapedEnd = GENERATED_CLIENT_COMPAT_END.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const block = new RegExp(`(?:^|\\r?\\n)${escapedStart}\\r?\\n[\\s\\S]*?${escapedEnd}(?:\\r?\\n|$)`)
+  return content.replace(block, (_match, offset: number) => offset === 0 ? '' : '\n')
+}
+
+/** Whether the patch text already contains a top-level YAML sequence. */
+function hasTopLevelPatchSequence(content: string): boolean {
+  return content.split(/\r?\n/).some((line) => {
+    const trimmed = line.trim()
+    return trimmed.startsWith('- ') || trimmed === '[]' || trimmed.startsWith('[')
+  })
+}
+
+/** Render the generated rows separately so reconciliation can replace them atomically. */
+function renderGeneratedClientCompatibility(entries: readonly WebClientCompatibility[]): string {
+  return [
+    GENERATED_CLIENT_COMPAT_START,
+    '- insert:',
+    ...entries.flatMap(entry => [
+      `    - id: ${entry.entryId}`,
+      `      name: ${JSON.stringify(entry.packageName)}`,
+    ]),
+    GENERATED_CLIENT_COMPAT_END,
+    '',
+  ].join('\n')
+}
+
+/** Update only the HUB-owned Web client rows in a profile patch file. */
+function reconcileGeneratedClientCompatibility(
+  profileDir: string,
+  entries: readonly WebClientCompatibility[],
+): boolean {
+  const patchPath = join(profileDir, 'cordis.patch.yml')
+  const before = existsSync(patchPath) ? readFileSync(patchPath, 'utf8') : '[]\n'
+  let base = stripGeneratedClientCompatibility(before)
+  if (entries.length === 0) {
+    if (!hasTopLevelPatchSequence(base)) base = `${base.trimEnd()}\n[]\n`
+  } else {
+    const generated = renderGeneratedClientCompatibility(entries)
+    const emptyRoot = /^\s*\[\]\s*$/m
+    if (emptyRoot.test(base)) base = base.replace(emptyRoot, generated.trimEnd())
+    else base = `${base.trimEnd()}${base.trim().length === 0 ? '' : '\n'}${generated}`
+  }
+  if (base === before) return false
+  writeFileSync(patchPath, base)
+  return true
+}
+
+/**
+ * Whether a resolved dependency exports a profile patch, i.e. is a bundle.
+ * @param packageName - the dependency's package name.
+ * @param profileDir - the profile directory (resolution anchor).
+ * @returns true when the package manifest declares a profile patch.
+ */
+function exportsPatch(packageName: string, profileDir: string): boolean {
+  return installedPackage(packageName, profileDir)?.manifest.dsh?.bundle?.patch !== undefined
 }
 
 /**
@@ -49,29 +156,35 @@ function exportsPatch(packageName: string, profileDir: string): boolean {
  * already written the real installed names (so a git/path/tarball/alias spec
  * on the command line reconciles by its true package name) and materialized
  * the packages. A dependency that resolves to a `dsh.bundle`-declaring
- * package joins the layer stack (appended in dependency order); a
- * dependency-listed name that no longer does — removed, or the installed
- * version dropped the declaration — leaves it. In-box bundles from the
- * profile template are not dependencies and are never touched. Warns once
- * per newly-added bundle-less dependency (a plain library is fine; the
- * warning is orientation).
+ * package joins the layer stack (appended in dependency order). A Web
+ * client-only package with a valid `exports["./client"]` file receives a
+ * generated compatibility row in `cordis.patch.yml`; other bundle-less
+ * dependencies remain ordinary dependencies. Dependency-listed names that no
+ * longer resolve to their supported activation form are removed. In-box
+ * bundles from the profile template are not dependencies and are never
+ * touched.
  */
 function reconcilePlugins(before: ProfileManifest, profileDir: string): void {
   const after = readProfileManifest(NAME, profileDir)
   const beforeDeps = new Set(Object.keys(before.dependencies ?? {}))
   const dependencies = Object.keys(after.dependencies ?? {})
   const plugins = after.dsh?.profile?.bundles ?? []
+  const compatibility = new Map<string, WebClientCompatibility>()
   let changed = false
   for (const packageName of dependencies) {
     const isBundle = exportsPatch(packageName, profileDir)
     if (isBundle && !plugins.includes(packageName)) {
       plugins.push(packageName)
       changed = true
-    } else if (!isBundle && !beforeDeps.has(packageName)) {
-      process.stderr.write(
-        `${NAME}: warning: ${packageName} declares no dsh.bundle — installed as a plain dependency, not a profile layer `
-        + '(a later update that gains one activates it automatically)\n',
-      )
+    } else if (!isBundle) {
+      const clientAdapter = webClientCompatibility(packageName, profileDir)
+      if (clientAdapter !== undefined) compatibility.set(packageName, clientAdapter)
+      else if (!beforeDeps.has(packageName)) {
+        process.stderr.write(
+          `${NAME}: warning: ${packageName} declares no dsh.bundle — installed as a plain dependency, not a profile layer `
+          + '(a later update that gains one activates it automatically)\n',
+        )
+      }
     }
   }
   const dependencySet = new Set(dependencies)
@@ -85,9 +198,11 @@ function reconcilePlugins(before: ProfileManifest, profileDir: string): void {
       changed = true
     }
   }
-  if (!changed) return
-  after.dsh = { ...after.dsh, profile: { ...after.dsh?.profile, bundles: plugins } }
-  writeProfileManifest(profileDir, after)
+  if (changed) {
+    after.dsh = { ...after.dsh, profile: { ...after.dsh?.profile, bundles: plugins } }
+    writeProfileManifest(profileDir, after)
+  }
+  reconcileGeneratedClientCompatibility(profileDir, [...compatibility.values()])
 }
 
 /**

@@ -1,5 +1,7 @@
 # Interface Snapshots
 
+[中文](README.zh.md)
+
 These images are development snapshots of the DeepSeek Harness Setup, HUB, and CONFIG surfaces. They are published for visual review and historical comparison only.
 
 - Captured on: **2026-08-17**

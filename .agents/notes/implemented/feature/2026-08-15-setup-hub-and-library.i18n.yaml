@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-15-setup-hub-and-library.md
-2026-08-15-setup-hub-and-library.md: fcecbad319fd7bf68e27f08c62ff6a52b90dfdf6
-2026-08-15-setup-hub-and-library.zh.md: 7109393197e58d30b878f9294ec4774a11249e98
+2026-08-15-setup-hub-and-library.md: d673f535e287e8d7b9b68b2307d1517928306209
+2026-08-15-setup-hub-and-library.zh.md: c8271510dc8220467c25e84b18a680595f86405e

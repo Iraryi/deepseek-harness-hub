@@ -12,7 +12,7 @@ DeepSeek Harness is currently in _developer preview_ and is iterating rapidly. *
 
 ## Windows desktop
 
-This repository also carries the Windows desktop distribution source: native WebView2 hosts, the separate CONFIG application, runtime packaging, and integration tests. User-facing Setup packages, the HUB catalog, and ecosystem documentation are published through [DeepSeek Harness HUB](https://github.com/Iraryi/deepseek-harness-hub); implementation details remain in the [Windows reference](windows/README.md).
+This repository also carries the Windows desktop distribution source: native WebView2 hosts, the separate CONFIG application, runtime packaging, and integration tests. User-facing Setup packages, the HUB catalog, and ecosystem documentation are published through [DeepSeek Harness HUB](https://github.com/Iraryi/deepseek-harness-hub); implementation details remain in the [Windows reference](../../windows/README.md).
 
 ## Run
 
@@ -24,7 +24,7 @@ Install `Node.js`, then run:
 npx @deepseek-ai/dsh web
 ```
 
-The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](docs/user/guide/index.md).
+The command starts the Web UI, served at `http://127.0.0.1:3080` by default. See [Web UI guide](../user/guide/index.md).
 
 ### Run from source
 
@@ -50,12 +50,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Development
 
-Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
+Start with the [development guide](../development.md) and [architecture documentation](../architecture.md).
 
-For agents, follow [AGENTS.md](AGENTS.md).
+For agents, follow [AGENTS.md](../../AGENTS.md).
 
 ## License
 
 [MIT](LICENSE)
 
-Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md).

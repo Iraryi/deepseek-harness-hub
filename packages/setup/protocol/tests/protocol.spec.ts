@@ -45,7 +45,31 @@ describe('Setup protocol', () => {
   it('requires an artifact hash and https URLs', () => {
     const invalid = { ...baseManifest, source: { ...baseManifest.source, repository: 'http://github.com/example/dsh-example' }, artifacts: [{ ...baseManifest.artifacts[0], sha256: 'bad' }] }
     const issues = validateSetupManifest(invalid)
-    expect(issues.map(issue => issue.path)).toEqual(expect.arrayContaining(['$.repository', '$.artifacts[0].sha256']))
+    expect(issues.map(issue => issue.path)).toEqual(expect.arrayContaining(['$.source.repository', '$.artifacts[0].sha256']))
+  })
+
+  it('rejects retired top-level fields and unknown nested fields', () => {
+    const invalid = {
+      ...baseManifest,
+      summary: 'retired field',
+      source: { ...baseManifest.source, publisher: 'retired field' },
+    }
+    expect(validateSetupManifest(invalid).map(issue => issue.path)).toEqual(expect.arrayContaining(['$.summary', '$.source.publisher']))
+  })
+
+  it('requires unique non-empty categories, tags, and artifact IDs', () => {
+    const invalid = {
+      ...baseManifest,
+      categories: [],
+      tags: ['example', 'example'],
+      artifacts: [baseManifest.artifacts[0], { ...baseManifest.artifacts[0] }],
+    }
+    const issues = validateSetupManifest(invalid)
+    expect(issues).toEqual(expect.arrayContaining([
+      { path: '$.categories', message: 'must be an array of non-empty strings' },
+      { path: '$.tags', message: 'must be an array of non-empty strings' },
+      { path: '$.artifacts[1].id', message: 'must be unique within $.artifacts' },
+    ]))
   })
 
   it('requires package installation to name a hashed package artifact', () => {
@@ -53,6 +77,17 @@ describe('Setup protocol', () => {
     expect(validateSetupManifest(missing)).toContainEqual({ path: '$.install.artifactId', message: 'must refer to an artifact in $.artifacts' })
     const installer = { ...baseManifest, artifacts: [{ ...baseManifest.artifacts[0], kind: 'installer' }] }
     expect(validateSetupManifest(installer)).toContainEqual({ path: '$.install.artifactId', message: 'must refer to a package or archive artifact' })
+  })
+
+  it('rejects unknown compatibility surfaces and platforms', () => {
+    const invalid = {
+      ...baseManifest,
+      compatibility: { ...baseManifest.compatibility, surfaces: ['mobile'], platforms: ['linux-x64'] },
+    }
+    expect(validateSetupManifest(invalid)).toEqual(expect.arrayContaining([
+      { path: '$.compatibility.surfaces', message: 'must contain only cli, web, desktop' },
+      { path: '$.compatibility.platforms', message: 'must contain only windows-x64, windows-arm64, any' },
+    ]))
   })
 
   it('accepts an explicit artifact filename and rejects path traversal', () => {

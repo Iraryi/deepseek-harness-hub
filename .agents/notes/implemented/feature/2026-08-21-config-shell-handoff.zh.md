@@ -2,6 +2,8 @@
 
 状态：已实现
 
+[English](2026-08-21-config-shell-handoff.md) | 中文
+
 ## 问题
 
 CONFIG 的“保存并运行”必须先保存配置、关闭 CONFIG，再启动同级 Desktop 或 HUB。若 CONFIG 直接启动子进程，子进程可能继承 CONFIG 所属的 Windows Job 并在 CONFIG 退出时一起被终止；若把参数直接追加给 `explorer.exe`，Explorer 又可能把这些参数当成路径处理，导致数据目录参数丢失。

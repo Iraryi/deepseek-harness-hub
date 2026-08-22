@@ -4,7 +4,7 @@ English | [中文](publish.zh.md)
 
 The previous tutorials loaded a local plugin through a `--patch` overlay. This tutorial packages it as an installable **bundle**, installs it into a **profile** with `dsh plugin add`, and explains the layer order that determines the composed configuration. It assumes the `dsh` CLI is installed. Complete [plugin configuration](./config.md) first.
 
-To use a fresh source checkout instead, complete the [run-from-source section](../../../../README.md#run-from-source), keep this tutorial's `hello-plugin` directory at the repository root, and run the remaining `dsh ...` commands from there as `pnpm dsh ...`. See [source execution](../../../../apps/cli/reference/README.md#source-execution) for build and launcher behavior.
+To use a fresh source checkout instead, complete the [run-from-source section](../../../implementation/README.md#run-from-source), keep this tutorial's `hello-plugin` directory at the repository root, and run the remaining `dsh ...` commands from there as `pnpm dsh ...`. See [source execution](../../../../apps/cli/reference/README.md#source-execution) for build and launcher behavior.
 
 ## Two concepts, two manifests
 
@@ -61,7 +61,7 @@ Create `hello-plugin/cordis.patch.yml`. The patch is a YAML array like the `--pa
       name: dsh-hello-plugin
 ```
 
-A package without the `dsh.bundle` declaration still installs, but only as a plain dependency: `dsh plugin` prints a warning and activates no layer. Use that package format for a library that plugin packages import rather than a plugin users enable.
+A package without `dsh.bundle` is normally an ordinary dependency. A package intended only for the Web client may instead declare `dsh.client.platform: "web"`, export `./client`, and ship that file; `dsh plugin` then writes a HUB-owned compatibility row so the browser bundle is discoverable without treating the package as a server-side profile bundle. Packages that meet neither form remain ordinary dependencies and do not activate a layer.
 
 ### The profile manifest
 

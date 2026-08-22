@@ -693,6 +693,57 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     }
   }, 30_000)
 
+  it('activates a Web client package without dsh.bundle through a generated compatibility row', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-web-client-compat-'))
+    const checkout = mkdtempSync(join(tmpdir(), 'dsh-web-client-compat-package-'))
+    const packageName = '@agent-hub/dsh-workspace-file-upload'
+    try {
+      mkdirSync(join(checkout, 'lib'), { recursive: true })
+      writeFileSync(join(checkout, 'package.json'), JSON.stringify({
+        name: packageName,
+        version: '0.1.0',
+        type: 'module',
+        main: './lib/index.js',
+        exports: { '.': './lib/index.js', './client': './lib/client.js' },
+        dsh: { client: { platform: 'web', inject: ['webServer'], immediately: true } },
+      }, undefined, 2))
+      writeFileSync(join(checkout, 'lib', 'index.js'), 'export const inject = ["webServer"]\nexport function apply() {}\n')
+      writeFileSync(join(checkout, 'lib', 'client.js'), 'export const apply = () => {}\n')
+
+      const installed = await runBuiltBin(
+        ['plugin', '--profile', 'web', 'add', '.'],
+        { DSH_HOME: home },
+        checkout,
+      )
+      expect(installed.code).toBe(0)
+      const profileDir = join(home, 'profiles', 'web')
+      const patchPath = join(profileDir, 'cordis.patch.yml')
+      const patch = readFileSync(patchPath, 'utf8')
+      expect(patch).toContain('# dsh-hub: generated web-client compatibility:start')
+      expect(patch).toContain(`name: "${packageName}"`)
+      expect(patch.match(/generated web-client compatibility:start/g)).toHaveLength(1)
+
+      const dumped = await runBuiltBin(['--profile', 'web', '--dump-config'], { DSH_HOME: home })
+      expect(dumped.code).toBe(0)
+      expect(dumped.stdout).toContain(`name: '${packageName}'`)
+
+      const repeated = await runBuiltBin(['plugin', '--profile', 'web', 'root'], { DSH_HOME: home })
+      expect(repeated.code).toBe(0)
+      expect(readFileSync(patchPath, 'utf8').match(/generated web-client compatibility:start/g)).toHaveLength(1)
+
+      const removed = await runBuiltBin(['plugin', '--profile', 'web', 'remove', packageName], { DSH_HOME: home })
+      expect(removed.code).toBe(0)
+      expect(readFileSync(patchPath, 'utf8')).not.toContain('generated web-client compatibility:start')
+      const removedManifest = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, string>
+      }
+      expect(removedManifest.dependencies?.[packageName]).toBeUndefined()
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+      rmSync(checkout, { recursive: true, force: true })
+    }
+  }, 90_000)
+
   describe('config dump', () => {
     let home: string
     beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'dsh-dump-bin-')) })

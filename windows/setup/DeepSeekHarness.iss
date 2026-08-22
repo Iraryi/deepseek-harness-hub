@@ -200,6 +200,21 @@ english.CheckApplicationDownload=The application will be downloaded and verified
 english.CheckApplicationLocal=The selected local application source will be verified before installation.
 english.CheckUpgradeSuffix= Existing program files will be upgraded and user data will be preserved.
 english.CheckFreshSuffix= A clean installation will be created.
+english.ExistingActionTitle=Installation action
+english.ExistingActionDescription=Choose an action for the existing installation.
+english.ExistingActionPrompt=Update, repair, or uninstall.
+english.ExistingActionUpdate=Update
+english.ExistingActionRepair=Repair
+english.ExistingActionUninstall=Uninstall
+english.ExistingActionBlocked=Update and repair require a writable installation and data location. Uninstall can still be opened from this page.
+english.UninstallTitle=Uninstall DeepSeek Harness
+english.UninstallQuestion=Choose the data policy first. Yes confirms the uninstall; No exits without uninstalling.
+english.UninstallKeepData=Keep user data (recommended)
+english.UninstallDeleteData=Delete user data
+english.UninstallConfirmYes=Yes
+english.UninstallConfirmNo=No
+english.UninstallLaunchFailed=The existing uninstaller could not be started.
+english.CheckDataPreserved=Both standard user data and portable application data are preserved during update and repair.
 english.CheckBlockedMessage=Setup cannot continue until the computer check passes. Correct the item marked ACTION and retry.
 english.ReadyRecommended=Installation method:
 english.ReadyRecommendedValue=Recommended automatic installation
@@ -319,6 +334,21 @@ chinesesimp.CheckApplicationDownload=应用本体会自动下载并校验。
 chinesesimp.CheckApplicationLocal=所选本地应用来源会在安装前自动校验。
 chinesesimp.CheckUpgradeSuffix= 检测到已有版本：将升级程序文件并保留用户数据。
 chinesesimp.CheckFreshSuffix= 将执行全新安装。
+chinesesimp.ExistingActionTitle=安装操作
+chinesesimp.ExistingActionDescription=请选择已有安装的操作。
+chinesesimp.ExistingActionPrompt=更新、修复或卸载。
+chinesesimp.ExistingActionUpdate=更新
+chinesesimp.ExistingActionRepair=修复
+chinesesimp.ExistingActionUninstall=卸载
+chinesesimp.ExistingActionBlocked=更新和修复需要可写的程序位置与数据位置；仍可以从此页面打开卸载程序。
+chinesesimp.UninstallTitle=卸载 DeepSeek Harness
+chinesesimp.UninstallQuestion=请先选择数据处理方式。底部“是”确认卸载，“否”退出且不执行卸载。
+chinesesimp.UninstallKeepData=保留用户数据（推荐）
+chinesesimp.UninstallDeleteData=删除用户数据
+chinesesimp.UninstallConfirmYes=是
+chinesesimp.UninstallConfirmNo=否
+chinesesimp.UninstallLaunchFailed=无法启动已有的卸载程序。
+chinesesimp.CheckDataPreserved=更新和修复都会保留标准用户数据与程序目录下的便携数据。
 chinesesimp.CheckBlockedMessage=电脑检查通过后才能继续。请处理标有“需要处理”的项目，再重新检查。
 chinesesimp.ReadyRecommended=安装方式：
 chinesesimp.ReadyRecommendedValue=推荐的全自动安装
@@ -340,6 +370,7 @@ chinesesimp.LaunchAfterInstall=启动 DeepSeek Harness（首次使用先打开 C
 
 [Files]
 Source: "{#LauncherDir}\dsh.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LauncherDir}\dsh-hub.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherDir}\dsh-config.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherDir}\Microsoft.Web.WebView2.Core.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherDir}\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{app}"; Flags: ignoreversion
@@ -361,11 +392,12 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Icons]
 Name: "{group}\DeepSeek Harness"; Filename: "{app}\dsh.exe"; WorkingDir: "{app}"
+Name: "{group}\HUB"; Filename: "{app}\dsh-hub.exe"; WorkingDir: "{app}"
 Name: "{group}\CONFIG"; Filename: "{app}\dsh-config.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\DeepSeek Harness"; Filename: "{app}\dsh.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\dsh-config.exe"; Parameters: "--first-run"; Description: "{cm:LaunchAfterInstall}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\dsh-config.exe"; Parameters: "--first-run"; Description: "{cm:LaunchAfterInstall}"; Check: ShouldLaunchConfigAfterInstall; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\setup\stop-installed-processes.ps1"" -AppDirectory ""{app}"""; Flags: runhidden waituntilterminated; RunOnceId: "stop-installed-processes"
@@ -373,7 +405,6 @@ Filename: "{cmd}"; Parameters: "/D /C rd /S /Q ""\\?\{app}\runtime"""; Flags: ru
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\runtime"
-Type: files; Name: "{app}\portable.mode"
 
 [Code]
 var
@@ -392,6 +423,7 @@ var
   CheckRetryButton: TNewButton;
   CheckRecommendedButton: TNewButton;
   CheckDetailsButton: TNewButton;
+  ExistingActionPage: TInputOptionWizardPage;
   PreparationPage: TOutputMarqueeProgressWizardPage;
   PreparationComplete: Boolean;
   CheckPassed: Boolean;
@@ -399,6 +431,15 @@ var
   RequestedDataMode: String;
   RequestedRuntimeMode: String;
   CheckDetailsVisible: Boolean;
+  InstallOperation: String;
+  ForceRuntimeReinstall: Boolean;
+  DeleteUserDataRequested: Boolean;
+  UninstallForm: TSetupForm;
+  UninstallQuestionLabel: TNewStaticText;
+  UninstallKeepDataRadio: TNewRadioButton;
+  UninstallDeleteDataRadio: TNewRadioButton;
+  UninstallYesButton: TNewButton;
+  UninstallNoButton: TNewButton;
 
 function GetTickCount: Cardinal;
   external 'GetTickCount@kernel32.dll stdcall';
@@ -407,6 +448,8 @@ function IsRecommendedInstall: Boolean;
 begin
   Result := SetupTypePage.SelectedValueIndex = 0;
 end;
+
+function ExistingPortableData: Boolean; forward;
 
 function RuntimeModeKey: String;
 begin
@@ -431,7 +474,10 @@ end;
 function DataModeKey: String;
 begin
   if IsRecommendedInstall and (RequestedDataMode = '') then begin
-    Result := 'standard';
+    if ExistingPortableData then
+      Result := 'portable'
+    else
+      Result := 'standard';
     Exit;
   end;
   if DataModePage.SelectedValueIndex = 1 then
@@ -518,6 +564,46 @@ begin
   Probe := AddBackslash(Directory) + '.dsh-setup-write-' + IntToStr(GetTickCount) + '.tmp';
   Result := SaveStringToFile(Probe, 'DeepSeek Harness Setup', False);
   if Result then DeleteFile(Probe);
+end;
+
+function IsDshInstallationAt(const Value: String): Boolean;
+var
+  Root: String;
+begin
+  Root := AddBackslash(NormalizePath(Value));
+  Result := FileExists(Root + 'dsh.exe') or
+    FileExists(Root + 'dsh-hub.exe') or
+    FileExists(Root + 'dsh-config.exe');
+end;
+
+function ExistingDshInstallation: Boolean;
+begin
+  Result := IsDshInstallationAt(ExpandConstant('{app}'));
+end;
+
+function ExistingPortableData: Boolean;
+var
+  Root: String;
+begin
+  Root := WizardForm.DirEdit.Text;
+  if Trim(Root) = '' then
+    Root := ExpandConstant('{localappdata}\Programs\DeepSeek Harness');
+  Root := AddBackslash(NormalizePath(Root));
+  Result := FileExists(Root + 'portable.mode') or
+    FileExists(Root + 'data\.dsh-portable-data') or
+    FileExists(Root + 'data\config.json') or
+    DirExists(Root + 'data\hub') or
+    DirExists(Root + 'data\dsh');
+end;
+
+function ExistingActionKey: String;
+begin
+  case ExistingActionPage.SelectedValueIndex of
+    1: Result := 'repair';
+    2: Result := 'uninstall';
+  else
+    Result := 'update';
+  end;
 end;
 
 procedure AppendCheckDetail(var Details: String; const Status, MessageText: String);
@@ -688,19 +774,115 @@ begin
   if CurStep = ssPostInstall then RegisterUserEnvironment;
 end;
 
+function InitializeUninstall: Boolean;
+var
+  DialogResult: Integer;
+begin
+  DeleteUserDataRequested := CompareText(ExpandConstant('{param:DELETEUSERDATA|0}'), '1') = 0;
+  if UninstallSilent then begin
+    Result := True;
+    Exit;
+  end;
+  UninstallForm := CreateCustomForm(ScaleX(560), ScaleY(300), False, True);
+  UninstallForm.Caption := CustomMessage('UninstallTitle');
+  UninstallForm.Position := poScreenCenter;
+
+  UninstallQuestionLabel := TNewStaticText.Create(UninstallForm);
+  UninstallQuestionLabel.Parent := UninstallForm;
+  UninstallQuestionLabel.Left := ScaleX(28);
+  UninstallQuestionLabel.Top := ScaleY(24);
+  UninstallQuestionLabel.Width := UninstallForm.ClientWidth - ScaleX(56);
+  UninstallQuestionLabel.Height := ScaleY(58);
+  UninstallQuestionLabel.AutoSize := False;
+  UninstallQuestionLabel.WordWrap := True;
+  UninstallQuestionLabel.Caption := CustomMessage('UninstallQuestion');
+
+  UninstallKeepDataRadio := TNewRadioButton.Create(UninstallForm);
+  UninstallKeepDataRadio.Parent := UninstallForm;
+  UninstallKeepDataRadio.Left := ScaleX(28);
+  UninstallKeepDataRadio.Top := ScaleY(102);
+  UninstallKeepDataRadio.Width := UninstallForm.ClientWidth - ScaleX(56);
+  UninstallKeepDataRadio.Height := ScaleY(34);
+  UninstallKeepDataRadio.Caption := CustomMessage('UninstallKeepData');
+  UninstallKeepDataRadio.Checked := True;
+
+  UninstallDeleteDataRadio := TNewRadioButton.Create(UninstallForm);
+  UninstallDeleteDataRadio.Parent := UninstallForm;
+  UninstallDeleteDataRadio.Left := ScaleX(28);
+  UninstallDeleteDataRadio.Top := ScaleY(150);
+  UninstallDeleteDataRadio.Width := UninstallForm.ClientWidth - ScaleX(56);
+  UninstallDeleteDataRadio.Height := ScaleY(34);
+  UninstallDeleteDataRadio.Caption := CustomMessage('UninstallDeleteData');
+
+  UninstallYesButton := TNewButton.Create(UninstallForm);
+  UninstallYesButton.Parent := UninstallForm;
+  UninstallYesButton.Left := UninstallForm.ClientWidth - ScaleX(210);
+  UninstallYesButton.Top := UninstallForm.ClientHeight - ScaleY(52);
+  UninstallYesButton.Width := ScaleX(90);
+  UninstallYesButton.Height := ScaleY(30);
+  UninstallYesButton.Caption := CustomMessage('UninstallConfirmYes');
+  UninstallYesButton.ModalResult := mrOk;
+
+  UninstallNoButton := TNewButton.Create(UninstallForm);
+  UninstallNoButton.Parent := UninstallForm;
+  UninstallNoButton.Left := UninstallForm.ClientWidth - ScaleX(108);
+  UninstallNoButton.Top := UninstallYesButton.Top;
+  UninstallNoButton.Width := ScaleX(90);
+  UninstallNoButton.Height := UninstallYesButton.Height;
+  UninstallNoButton.Caption := CustomMessage('UninstallConfirmNo');
+  UninstallNoButton.ModalResult := mrCancel;
+
+  DialogResult := UninstallForm.ShowModal;
+  if DialogResult = mrOk then begin
+    DeleteUserDataRequested := UninstallDeleteDataRadio.Checked;
+    Result := True;
+  end else begin
+    Result := False;
+  end;
+  UninstallForm.Free;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
-  if CurUninstallStep = usUninstall then UnregisterUserEnvironment;
+  if CurUninstallStep = usUninstall then begin
+    UnregisterUserEnvironment;
+  end else if (CurUninstallStep = usPostUninstall) and DeleteUserDataRequested then begin
+    DelTree(ExpandConstant('{localappdata}\DeepSeekHarness'), True, True, True);
+    DelTree(ExpandConstant('{app}\data'), True, True, True);
+    DeleteFile(ExpandConstant('{app}\portable.mode'));
+  end;
 end;
 
 procedure ApplyRecommendedSettings;
 begin
   SetupTypePage.SelectedValueIndex := 0;
-  DataModePage.SelectedValueIndex := 0;
+  WizardForm.DirEdit.Text := ExpandConstant('{localappdata}\Programs\DeepSeek Harness');
+  if ExistingPortableData then
+    DataModePage.SelectedValueIndex := 1
+  else
+    DataModePage.SelectedValueIndex := 0;
   RuntimeModePage.SelectedValueIndex := 0;
   RequestedDataMode := '';
   RequestedRuntimeMode := '';
-  WizardForm.DirEdit.Text := ExpandConstant('{localappdata}\Programs\DeepSeek Harness');
+end;
+
+function LaunchExistingUninstaller: Boolean;
+var
+  UninstallerPath: String;
+  ResultCode: Integer;
+begin
+  UninstallerPath := ExpandConstant('{app}\unins000.exe');
+  if not FileExists(UninstallerPath) then begin
+    SuppressibleMsgBox(CustomMessage('UninstallLaunchFailed'), mbError, MB_OK, IDOK);
+    Result := False;
+    Exit;
+  end;
+  Result := Exec(UninstallerPath, '', ExpandConstant('{app}'), SW_SHOWNORMAL,
+    ewNoWait, ResultCode);
+  if Result then begin
+    WizardForm.CancelButton.Enabled := False;
+    WizardForm.Close;
+  end;
 end;
 
 procedure RunComputerChecks;
@@ -741,6 +923,13 @@ begin
 #endif
   if IsWebView2Installed then WebViewInstallerSize := 0;
   Mode := RuntimeModeKey;
+  if ExistingDshInstallation then begin
+    if (InstallOperation = '') or (InstallOperation = 'fresh') then
+      InstallOperation := 'update';
+    AppendCheckDetail(Details, CustomMessage('CheckAutomatic'), CustomMessage('CheckExisting'));
+    AppendCheckDetail(Details, CustomMessage('CheckPassed'), CustomMessage('CheckDataPreserved'));
+  end else
+    InstallOperation := 'fresh';
 
   if (Mode = 'source') and not SourceBuildToolsAvailable then begin
     SetCheckRow(0, CustomMessage('CheckAttention'), CustomMessage('CheckSystemTitle'),
@@ -858,9 +1047,8 @@ begin
     AppendCheckDetail(Details, CustomMessage('CheckPassed'), CustomMessage('CheckRuntimeLocal'));
   end;
 
-  if FileExists(ExpandConstant('{app}\dsh.exe')) then begin
+  if ExistingDshInstallation then begin
     ApplicationMessage := ApplicationMessage + CustomMessage('CheckUpgradeSuffix');
-    AppendCheckDetail(Details, CustomMessage('CheckAutomatic'), CustomMessage('CheckExisting'));
   end else begin
     ApplicationMessage := ApplicationMessage + CustomMessage('CheckFreshSuffix');
     AppendCheckDetail(Details, CustomMessage('CheckPassed'), CustomMessage('CheckFresh'));
@@ -874,6 +1062,8 @@ begin
 
   if CheckPassed then
     CheckPage.Description := CustomMessage('CheckReady')
+  else if ExistingDshInstallation then
+    CheckPage.Description := CustomMessage('ExistingActionBlocked')
   else
     CheckPage.Description := CustomMessage('CheckBlocked');
   if CheckPassed then
@@ -955,6 +1145,8 @@ begin
   if CompareText(RequestedDataMode, 'portable') = 0 then
     DataModePage.SelectedValueIndex := 1
   else if CompareText(GetPreviousData('DataMode', ''), 'portable') = 0 then
+    DataModePage.SelectedValueIndex := 1
+  else if ExistingPortableData then
     DataModePage.SelectedValueIndex := 1
   else
     DataModePage.SelectedValueIndex := 0;
@@ -1058,9 +1250,19 @@ begin
   CheckDetailsButton.Height := CheckRetryButton.Height;
   CheckDetailsButton.OnClick := @CheckDetailsButtonClick;
   CheckDetailsVisible := False;
+  ExistingActionPage := CreateInputOptionPage(CheckPage.ID,
+    CustomMessage('ExistingActionTitle'), CustomMessage('ExistingActionDescription'),
+    CustomMessage('ExistingActionPrompt'), True, False);
+  ExistingActionPage.Add(CustomMessage('ExistingActionUpdate'));
+  ExistingActionPage.Add(CustomMessage('ExistingActionRepair'));
+  ExistingActionPage.Add(CustomMessage('ExistingActionUninstall'));
+  ExistingActionPage.SelectedValueIndex := 0;
   PreparationPage := CreateOutputMarqueeProgressPage(
     CustomMessage('PrepareTitle'), CustomMessage('PrepareStarting'));
   PreparationComplete := False;
+  InstallOperation := '';
+  ForceRuntimeReinstall := False;
+  DeleteUserDataRequested := False;
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
@@ -1074,7 +1276,8 @@ begin
     ((PageID = RuntimeModePage.ID) and IsRecommendedInstall) or
     ((PageID = RuntimeArchivePage.ID) and (IsRecommendedInstall or (Mode <> 'archive'))) or
     ((PageID = RuntimeFolderPage.ID) and (Mode <> 'folder')) or
-    ((PageID = SourceArchivePage.ID) and (Mode <> 'source'));
+    ((PageID = SourceArchivePage.ID) and (Mode <> 'source')) or
+    ((PageID = ExistingActionPage.ID) and not ExistingDshInstallation);
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
@@ -1115,15 +1318,30 @@ begin
 
   if CurPageID = CheckPage.ID then begin
     RunComputerChecks;
-    if not CheckPassed then begin
+    if not CheckPassed and not ExistingDshInstallation then begin
       SuppressibleMsgBox(CustomMessage('CheckBlockedMessage'), mbError, MB_OK, IDOK);
       Result := False;
       Exit;
     end;
   end;
 
+  if CurPageID = ExistingActionPage.ID then begin
+    InstallOperation := ExistingActionKey;
+    if InstallOperation = 'uninstall' then begin
+      LaunchExistingUninstaller;
+      Result := False;
+      Exit;
+    end;
+    ForceRuntimeReinstall := InstallOperation = 'repair';
+    if not CheckPassed then begin
+      SuppressibleMsgBox(CustomMessage('ExistingActionBlocked'), mbError, MB_OK, IDOK);
+      Result := False;
+      Exit;
+    end;
+  end;
+
   if (CurPageID = wpReady) and (RuntimeModeKey = 'download') and
-    (not CurrentPackagedRuntimeIsInstalled) then begin
+    (ForceRuntimeReinstall or not CurrentPackagedRuntimeIsInstalled) then begin
     DownloadPage.Clear;
     DownloadPage.Add('{#RuntimeDownloadUrl}', '{#RuntimeAssetName}', '{#RuntimeSha256}');
     DownloadPage.Show;
@@ -1175,6 +1393,11 @@ begin
     S := S + CustomMessage('WebViewMissing');
   if MemoTasksInfo <> '' then S := S + NewLine + NewLine + MemoTasksInfo;
   Result := S;
+end;
+
+function ShouldLaunchConfigAfterInstall: Boolean;
+begin
+  Result := InstallOperation = 'fresh';
 end;
 
 function Quote(const Value: String): String;
@@ -1348,7 +1571,7 @@ var
   Arguments: String;
 begin
   Mode := RuntimeModeKey;
-  if CurrentPackagedRuntimeIsInstalled then begin
+  if (not ForceRuntimeReinstall) and CurrentPackagedRuntimeIsInstalled then begin
     Log('The current packaged Runtime is already installed; skipping Runtime replacement.');
     Result := True;
     Exit;
@@ -1380,6 +1603,12 @@ var
   Language: String;
   Arguments: String;
 begin
+  if (InstallOperation <> 'fresh') and
+    FileExists(SelectedDataDirectory + '\config.json') then begin
+    Log('Existing configuration preserved during ' + InstallOperation + '.');
+    Result := True;
+    Exit;
+  end;
   if ActiveLanguage = 'chinesesimp' then Language := 'zh-CN' else Language := 'en-US';
   Arguments := '-Language ' + PowerShellLiteral(Language) +
     ' -AppDirectory ' + PowerShellLiteral(ExpandConstant('{app}'));
@@ -1420,10 +1649,19 @@ begin
       Exit;
     end;
 
-    if DataModeKey = 'portable' then
-      SaveStringToFile(ExpandConstant('{app}\portable.mode'), '', False)
-    else if FileExists(ExpandConstant('{app}\portable.mode')) then
-      DeleteFile(ExpandConstant('{app}\portable.mode'));
+    if DataModeKey = 'portable' then begin
+      if not ForceDirectories(SelectedDataDirectory) or
+        not SaveStringToFile(ExpandConstant('{app}\portable.mode'), '', False) or
+        not SaveStringToFile(SelectedDataDirectory + '\.dsh-portable-data', 'DeepSeek Harness portable user data', False) then begin
+        Result := TaskFailureMessage(CustomMessage('ConfigSeedFailed'));
+        Exit;
+      end;
+    end else begin
+      if FileExists(ExpandConstant('{app}\portable.mode')) then
+        DeleteFile(ExpandConstant('{app}\portable.mode'));
+      if FileExists(SelectedDataDirectory + '\.dsh-portable-data') then
+        DeleteFile(SelectedDataDirectory + '\.dsh-portable-data');
+    end;
 
     SetPreparationStage(4, 5, 'PrepareConfigStep');
     if not SeedFirstRunConfig then begin

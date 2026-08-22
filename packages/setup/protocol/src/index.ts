@@ -53,14 +53,15 @@ export function validateSetupManifest(value: unknown): readonly SetupIssue[] {
   const record = asRecord(value, '$', issues)
   if (record === undefined) return issues
 
+  rejectUnknownKeys(record, ['schemaVersion', 'id', 'name', 'description', 'version', 'kind', 'categories', 'tags', 'source', 'compatibility', 'license', 'signature', 'audit', 'artifacts', 'install', 'permissions', 'network'], '$', issues)
   requiredLiteral(record, 'schemaVersion', SETUP_MANIFEST_SCHEMA_VERSION, issues)
   requiredString(record, 'id', issues)
   requiredText(record, 'name', issues)
   requiredText(record, 'description', issues)
   requiredString(record, 'version', issues)
   requiredOneOf(record, 'kind', ['virtual', 'executable'], issues)
-  requiredStringArray(record, 'categories', issues)
-  requiredStringArray(record, 'tags', issues)
+  requiredStringArray(record, 'categories', issues, '$.categories', 1, true)
+  requiredStringArray(record, 'tags', issues, '$.tags', 0, true)
   validateSource(record.source, issues)
   validateCompatibility(record.compatibility, issues)
   validateLicense(record.license, issues)
@@ -163,7 +164,11 @@ function asRecord(value: unknown, path: string, issues: SetupIssue[]): Record<st
 }
 
 function requiredString(record: Record<string, unknown>, key: string, issues: SetupIssue[]): void {
-  if (typeof record[key] !== 'string' || record[key].trim().length === 0) issues.push({ path: `$.${key}`, message: 'must be a non-empty string' })
+  requiredStringAt(record, key, `$.${key}`, issues)
+}
+
+function requiredStringAt(record: Record<string, unknown>, key: string, path: string, issues: SetupIssue[]): void {
+  if (typeof record[key] !== 'string' || record[key].trim().length === 0) issues.push({ path, message: 'must be a non-empty string' })
 }
 
 function requiredText(record: Record<string, unknown>, key: string, issues: SetupIssue[]): void {
@@ -171,7 +176,8 @@ function requiredText(record: Record<string, unknown>, key: string, issues: Setu
   if (typeof value === 'string' && value.trim().length > 0) return
   const nested = asRecord(value, `$.${key}`, issues)
   if (nested === undefined) return
-  requiredString(nested, 'default', issues)
+  rejectUnknownKeys(nested, ['default', 'zh', 'en'], `$.${key}`, issues)
+  requiredStringAt(nested, 'default', `$.${key}.default`, issues)
   for (const language of ['zh', 'en']) {
     if (nested[language] !== undefined && (typeof nested[language] !== 'string' || nested[language].trim().length === 0)) {
       issues.push({ path: `$.${key}.${language}`, message: 'must be a non-empty string when present' })
@@ -183,61 +189,79 @@ function requiredLiteral(record: Record<string, unknown>, key: string, expected:
   if (record[key] !== expected) issues.push({ path: `$.${key}`, message: `must equal ${JSON.stringify(expected)}` })
 }
 
-function requiredOneOf(record: Record<string, unknown>, key: string, expected: readonly string[], issues: SetupIssue[]): void {
-  if (typeof record[key] !== 'string' || !expected.includes(record[key])) issues.push({ path: `$.${key}`, message: `must be one of ${expected.join(', ')}` })
+function requiredOneOf(record: Record<string, unknown>, key: string, expected: readonly string[], issues: SetupIssue[], path = `$.${key}`): void {
+  if (typeof record[key] !== 'string' || !expected.includes(record[key])) issues.push({ path, message: `must be one of ${expected.join(', ')}` })
 }
 
-function requiredStringArray(record: Record<string, unknown>, key: string, issues: SetupIssue[]): readonly string[] | undefined {
+function requiredStringArray(record: Record<string, unknown>, key: string, issues: SetupIssue[], path = `$.${key}`, minimum = 0, unique = false): readonly string[] | undefined {
   const value = record[key]
-  if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || item.trim().length === 0)) {
-    issues.push({ path: `$.${key}`, message: 'must be an array of non-empty strings' })
+  if (!Array.isArray(value) || value.length < minimum || value.some(item => typeof item !== 'string' || item.trim().length === 0) || (unique && new Set(value).size !== value.length)) {
+    issues.push({ path, message: 'must be an array of non-empty strings' })
     return undefined
   }
   return value as readonly string[]
 }
 
+function requiredEnumStringArray(record: Record<string, unknown>, key: string, expected: readonly string[], issues: SetupIssue[], path = `$.${key}`, minimum = 0, unique = false): void {
+  const value = requiredStringArray(record, key, issues, path, minimum, unique)
+  if (value !== undefined && value.some(item => !expected.includes(item))) issues.push({ path, message: `must contain only ${expected.join(', ')}` })
+}
+
+function rejectUnknownKeys(record: Record<string, unknown>, allowed: readonly string[], path: string, issues: SetupIssue[]): void {
+  const accepted = new Set(allowed)
+  for (const key of Object.keys(record)) {
+    if (!accepted.has(key)) issues.push({ path: `${path}.${key}`, message: 'is not allowed by Setup Registry v1' })
+  }
+}
+
 function validateSource(value: unknown, issues: SetupIssue[]): void {
   const record = asRecord(value, '$.source', issues)
   if (record === undefined) return
-  requiredUrl(record, 'repository', issues)
-  requiredString(record, 'ref', issues)
+  rejectUnknownKeys(record, ['repository', 'ref', 'commit', 'release'], '$.source', issues)
+  requiredUrl(record, 'repository', issues, '$.source.repository')
+  requiredStringAt(record, 'ref', '$.source.ref', issues)
   if (record.commit !== undefined && (typeof record.commit !== 'string' || !/^[0-9a-f]{40}$/i.test(record.commit))) issues.push({ path: '$.source.commit', message: 'must be a 40-character commit hash when present' })
-  if (record.release !== undefined && typeof record.release !== 'string') issues.push({ path: '$.source.release', message: 'must be a string when present' })
+  if (record.release !== undefined && (typeof record.release !== 'string' || record.release.trim().length === 0)) issues.push({ path: '$.source.release', message: 'must be a non-empty string when present' })
 }
 
 function validateCompatibility(value: unknown, issues: SetupIssue[]): void {
   const record = asRecord(value, '$.compatibility', issues)
   if (record === undefined) return
-  requiredString(record, 'dsh', issues)
-  requiredStringArray(record, 'surfaces', issues)
-  if (record.node !== undefined && typeof record.node !== 'string') issues.push({ path: '$.compatibility.node', message: 'must be a string when present' })
-  if (record.platforms !== undefined) requiredStringArray(record, 'platforms', issues)
+  rejectUnknownKeys(record, ['dsh', 'surfaces', 'node', 'platforms'], '$.compatibility', issues)
+  requiredStringAt(record, 'dsh', '$.compatibility.dsh', issues)
+  requiredEnumStringArray(record, 'surfaces', ['cli', 'web', 'desktop'], issues, '$.compatibility.surfaces', 1, true)
+  if (record.node !== undefined && (typeof record.node !== 'string' || record.node.trim().length === 0)) issues.push({ path: '$.compatibility.node', message: 'must be a non-empty string when present' })
+  if (record.platforms !== undefined) requiredEnumStringArray(record, 'platforms', ['windows-x64', 'windows-arm64', 'any'], issues, '$.compatibility.platforms', 1, true)
 }
 
 function validateLicense(value: unknown, issues: SetupIssue[]): void {
   const record = asRecord(value, '$.license', issues)
   if (record === undefined) return
-  requiredString(record, 'identifier', issues)
-  requiredString(record, 'name', issues)
+  rejectUnknownKeys(record, ['identifier', 'name', 'url', 'notice', 'redistributable'], '$.license', issues)
+  requiredStringAt(record, 'identifier', '$.license.identifier', issues)
+  requiredStringAt(record, 'name', '$.license.name', issues)
   if (typeof record.redistributable !== 'boolean') issues.push({ path: '$.license.redistributable', message: 'must be a boolean' })
-  if (record.url !== undefined) requiredUrl(record, 'url', issues)
+  if (record.url !== undefined) requiredUrl(record, 'url', issues, '$.license.url')
   if (record.notice !== undefined && typeof record.notice !== 'string') issues.push({ path: '$.license.notice', message: 'must be a string when present' })
 }
 
 function validateSignature(value: unknown, issues: SetupIssue[]): void {
   const record = asRecord(value, '$.signature', issues)
   if (record === undefined) return
-  requiredOneOf(record, 'status', ['valid', 'invalid', 'unsigned', 'unknown'], issues)
-  if (record.type !== undefined) requiredOneOf(record, 'type', ['authenticode', 'sigstore', 'minisign', 'other'], issues)
+  rejectUnknownKeys(record, ['status', 'type', 'signer', 'issuer', 'thumbprint', 'timestamp'], '$.signature', issues)
+  requiredOneOf(record, 'status', ['valid', 'invalid', 'unsigned', 'unknown'], issues, '$.signature.status')
+  if (record.type !== undefined) requiredOneOf(record, 'type', ['authenticode', 'sigstore', 'minisign', 'other'], issues, '$.signature.type')
   for (const key of ['signer', 'issuer', 'thumbprint', 'timestamp']) if (record[key] !== undefined && typeof record[key] !== 'string') issues.push({ path: `$.signature.${key}`, message: 'must be a string when present' })
 }
 
 function validateAudit(value: unknown, issues: SetupIssue[]): void {
   const record = asRecord(value, '$.audit', issues)
   if (record === undefined) return
-  requiredOneOf(record, 'status', ['certified', 'reviewed', 'unreviewed', 'rejected'], issues)
-  requiredStringArray(record, 'checks', issues)
-  for (const key of ['auditor', 'checkedAt', 'report']) if (record[key] !== undefined && typeof record[key] !== 'string') issues.push({ path: `$.audit.${key}`, message: 'must be a string when present' })
+  rejectUnknownKeys(record, ['status', 'auditor', 'checkedAt', 'report', 'checks'], '$.audit', issues)
+  requiredOneOf(record, 'status', ['certified', 'reviewed', 'unreviewed', 'rejected'], issues, '$.audit.status')
+  requiredStringArray(record, 'checks', issues, '$.audit.checks')
+  for (const key of ['auditor', 'report']) if (record[key] !== undefined && typeof record[key] !== 'string') issues.push({ path: `$.audit.${key}`, message: 'must be a string when present' })
+  if (record.checkedAt !== undefined && (typeof record.checkedAt !== 'string' || !isIsoDateTime(record.checkedAt))) issues.push({ path: '$.audit.checkedAt', message: 'must be an ISO date-time string when present' })
 }
 
 function validateArtifacts(value: unknown, issues: SetupIssue[]): SetupArtifact[] | undefined {
@@ -246,21 +270,26 @@ function validateArtifacts(value: unknown, issues: SetupIssue[]): SetupArtifact[
     return undefined
   }
   const artifacts: SetupArtifact[] = []
+  const ids = new Set<string>()
   value.forEach((item, index) => {
     const record = asRecord(item, `$.artifacts[${index}]`, issues)
     if (record === undefined) return
-    requiredString(record, 'id', issues)
-    requiredOneOf(record, 'kind', ['in-box', 'package', 'archive', 'installer'], issues)
+    requiredStringAt(record, 'id', `$.artifacts[${index}].id`, issues)
+    if (typeof record.id === 'string' && ids.has(record.id)) issues.push({ path: `$.artifacts[${index}].id`, message: 'must be unique within $.artifacts' })
+    if (typeof record.id === 'string') ids.add(record.id)
+    requiredOneOf(record, 'kind', ['in-box', 'package', 'archive', 'installer'], issues, `$.artifacts[${index}].kind`)
     if (record.kind === 'in-box') {
-      requiredString(record, 'component', issues)
+      rejectUnknownKeys(record, ['id', 'kind', 'component', 'platform'], `$.artifacts[${index}]`, issues)
+      requiredStringAt(record, 'component', `$.artifacts[${index}].component`, issues)
     } else {
-      requiredUrl(record, 'url', issues)
-      requiredString(record, 'sha256', issues)
+      rejectUnknownKeys(record, ['id', 'kind', 'url', 'sha256', 'fileName', 'bytes', 'platform', 'executable'], `$.artifacts[${index}]`, issues)
+      requiredUrl(record, 'url', issues, `$.artifacts[${index}].url`)
+      requiredStringAt(record, 'sha256', `$.artifacts[${index}].sha256`, issues)
       if (typeof record.sha256 === 'string' && !isSha256(record.sha256)) issues.push({ path: `$.artifacts[${index}].sha256`, message: 'must be a SHA-256 hexadecimal digest' })
       if (record.fileName !== undefined && (typeof record.fileName !== 'string' || !isSafeFileName(record.fileName))) issues.push({ path: `$.artifacts[${index}].fileName`, message: 'must be a safe basename when present' })
     }
     if (record.bytes !== undefined && (typeof record.bytes !== 'number' || !Number.isSafeInteger(record.bytes) || record.bytes < 0)) issues.push({ path: `$.artifacts[${index}].bytes`, message: 'must be a non-negative safe integer when present' })
-    if (record.platform !== undefined) requiredOneOf(record, 'platform', ['windows-x64', 'windows-arm64', 'any'], issues)
+    if (record.platform !== undefined) requiredOneOf(record, 'platform', ['windows-x64', 'windows-arm64', 'any'], issues, `$.artifacts[${index}].platform`)
     if (record.executable !== undefined && typeof record.executable !== 'boolean') issues.push({ path: `$.artifacts[${index}].executable`, message: 'must be a boolean when present' })
     artifacts.push(record as unknown as SetupArtifact)
   })
@@ -270,34 +299,39 @@ function validateArtifacts(value: unknown, issues: SetupIssue[]): SetupArtifact[
 function validateInstall(value: unknown, issues: SetupIssue[]): SetupManifest['install'] | undefined {
   const record = asRecord(value, '$.install', issues)
   if (record === undefined) return undefined
-  requiredOneOf(record, 'mode', ['profile', 'executable'], issues)
+  rejectUnknownKeys(record, ['mode', 'source', 'artifactId', 'bundle', 'profile', 'silentArgs'], '$.install', issues)
+  requiredOneOf(record, 'mode', ['profile', 'executable'], issues, '$.install.mode')
   if (record.mode === 'profile') {
-    requiredOneOf(record, 'source', ['package', 'in-box'], issues)
-    if (record.source === 'package') requiredString(record, 'artifactId', issues)
-    if (record.source === 'in-box') requiredString(record, 'bundle', issues)
-    if (record.profile !== undefined && typeof record.profile !== 'string') issues.push({ path: '$.install.profile', message: 'must be a string when present' })
+    requiredOneOf(record, 'source', ['package', 'in-box'], issues, '$.install.source')
+    if (record.source === 'package') requiredStringAt(record, 'artifactId', '$.install.artifactId', issues)
+    if (record.source === 'in-box') requiredStringAt(record, 'bundle', '$.install.bundle', issues)
+    if (record.profile !== undefined && (typeof record.profile !== 'string' || record.profile.trim().length === 0)) issues.push({ path: '$.install.profile', message: 'must be a non-empty string when present' })
   } else if (record.mode === 'executable') {
-    requiredString(record, 'artifactId', issues)
-    if (record.silentArgs !== undefined) requiredStringArray(record, 'silentArgs', issues)
+    requiredStringAt(record, 'artifactId', '$.install.artifactId', issues)
+    if (record.silentArgs !== undefined) requiredStringArray(record, 'silentArgs', issues, '$.install.silentArgs')
   }
   return record as unknown as SetupManifest['install']
 }
 
-function requiredUrl(record: Record<string, unknown>, key: string, issues: SetupIssue[]): void {
+function requiredUrl(record: Record<string, unknown>, key: string, issues: SetupIssue[], path = `$.${key}`): void {
   if (typeof record[key] !== 'string') {
-    issues.push({ path: `$.${key}`, message: 'must be an https URL' })
+    issues.push({ path, message: 'must be an https URL' })
     return
   }
   try {
     const url = new URL(record[key])
-    if (url.protocol !== 'https:') issues.push({ path: `$.${key}`, message: 'must use https' })
+    if (url.protocol !== 'https:') issues.push({ path, message: 'must use https' })
   } catch {
-    issues.push({ path: `$.${key}`, message: 'must be an https URL' })
+    issues.push({ path, message: 'must be an https URL' })
   }
 }
 
 function isSha256(value: string): boolean {
   return /^[0-9a-f]{64}$/i.test(value)
+}
+
+function isIsoDateTime(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value))
 }
 
 function isSafeFileName(value: string): boolean {

@@ -1,17 +1,57 @@
 {
   "schemaVersion": 1,
   "id": "example-community-plugin",
-  "name": "Example Community Plugin",
-  "summary": "Minimal virtual Setup example for a DSH plugin.",
+  "name": {
+    "default": "Example Community Plugin",
+    "en": "Example Community Plugin",
+    "zh": "社区插件示例"
+  },
+  "description": {
+    "default": "Minimal virtual Setup example for a DSH plugin.",
+    "en": "Minimal virtual Setup example for a DSH plugin.",
+    "zh": "用于 DSH 插件的最小虚拟 Setup 示例。"
+  },
   "version": "1.0.0",
-  "publisher": { "name": "Example Publisher", "url": "https://github.com/example" },
   "kind": "virtual",
   "categories": ["development"],
   "tags": ["example", "plugin"],
-  "source": { "repository": "https://github.com/example/dsh-plugin", "ref": "v1.0.0" },
-  "license": { "identifier": "MIT", "url": "https://github.com/example/dsh-plugin/blob/main/LICENSE" },
-  "compatibility": { "dsh": ">=0.1.0", "platforms": ["windows", "linux", "macos"], "architectures": ["any"], "surfaces": ["desktop"] },
-  "trust": { "signature": "unknown", "review": "source" },
-  "requirements": { "administrator": false, "restart": "desktop", "networkHosts": ["github.com"], "externalRuntimes": [] },
-  "install": { "mode": "dsh-cli", "profile": "desktop", "command": "dsh plugin --profile web add github:example/dsh-plugin#v1.0.0", "rollback": "Remove the package from HUB inventory and restart Desktop." }
+  "source": {
+    "repository": "https://github.com/example/dsh-plugin",
+    "ref": "v1.0.0",
+    "release": "v1.0.0"
+  },
+  "compatibility": {
+    "dsh": ">=0.1.0",
+    "surfaces": ["desktop"],
+    "platforms": ["any"]
+  },
+  "license": {
+    "identifier": "MIT",
+    "name": "MIT License",
+    "url": "https://github.com/example/dsh-plugin/blob/main/LICENSE",
+    "redistributable": true
+  },
+  "signature": { "status": "unknown" },
+  "audit": {
+    "status": "unreviewed",
+    "checks": ["manifest example only"]
+  },
+  "artifacts": [
+    {
+      "id": "source-archive",
+      "kind": "archive",
+      "url": "https://github.com/example/dsh-plugin/archive/refs/tags/v1.0.0.tar.gz",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fileName": "example-community-plugin-v1.0.0.tar.gz",
+      "platform": "any"
+    }
+  ],
+  "install": {
+    "mode": "profile",
+    "source": "package",
+    "artifactId": "source-archive",
+    "profile": "web"
+  },
+  "permissions": ["modify the selected DSH profile"],
+  "network": ["github.com"]
 }

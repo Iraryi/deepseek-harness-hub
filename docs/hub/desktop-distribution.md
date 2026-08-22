@@ -1,5 +1,7 @@
 # Project Boundary
 
+[中文](desktop-distribution.zh.md)
+
 HUB and Desktop are separate formal projects. HUB owns its source, Setup build system, formal Setup artifacts, catalog, and release channel. Desktop is not a hidden dependency of HUB releases.
 
 ## `deepseek-harness-hub`

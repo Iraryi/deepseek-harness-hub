@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Iraryi/deepseek-harness-hub/raw/main/registry/schema/setup-registry.schema.json",
+  "title": "DeepSeek Harness Setup Registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "source", "entries"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "source": { "type": "string", "pattern": "^https://" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["manifest", "metrics"],
+        "properties": {
+          "manifest": { "$ref": "./setup-package.schema.json" },
+          "metrics": { "$ref": "#/$defs/metrics" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stars": { "type": "integer", "minimum": 0 },
+        "installs": { "type": "integer", "minimum": 0 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

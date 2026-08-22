@@ -34,9 +34,25 @@ internal static class AppPaths
         }
     }
 
+    private static string PortableDataDirectory
+    {
+        get { return Path.Combine(ExeDir, "data"); }
+    }
+
+    private static bool PortableDataLooksOwned
+    {
+        get
+        {
+            return File.Exists(Path.Combine(PortableDataDirectory, ".dsh-portable-data"))
+                || File.Exists(Path.Combine(PortableDataDirectory, "config.json"))
+                || Directory.Exists(Path.Combine(PortableDataDirectory, "hub"))
+                || Directory.Exists(Path.Combine(PortableDataDirectory, "dsh"));
+        }
+    }
+
     public static bool IsPortable
     {
-        get { return File.Exists(Path.Combine(ExeDir, "portable.mode")); }
+        get { return File.Exists(Path.Combine(ExeDir, "portable.mode")) || PortableDataLooksOwned; }
     }
 
     public static string DataDir
@@ -52,7 +68,7 @@ internal static class AppPaths
             }
             if (IsPortable)
             {
-                return Path.Combine(ExeDir, "data");
+                return PortableDataDirectory;
             }
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeepSeekHarness");
         }

@@ -9,8 +9,10 @@
   Discover, understand, install, update, repair, and compose the DeepSeek Harness ecosystem from one desktop-native control center.
 </p>
 
+[中文](README.zh.md)
+
 <p align="center">
-  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="README.zh.md">简体中文</a> ·
   <a href="https://github.com/Iraryi/deepseek-harness-hub/releases">Downloads</a> ·
   <a href="docs/hub/setup-package-spec.md">Setup specification</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
@@ -31,7 +33,7 @@
 | Layer | What users see | What it does |
 | --- | --- | --- |
 | **HUB application** | A native desktop marketplace and component manager | Aggregates DSHMK, curated sources, GitHub discovery, starred projects, local packages, installed components, updates, repair, and restart workflows |
-| **Setup registry** | Consistent Setup-style installation pages | Describes source, license, publisher, certificate/signature state, permissions, network use, install evidence, options, rollback, and compatibility before installation |
+| **Setup registry** | Consistent Setup-style installation pages | Describes source identity, license, certificate/signature state, permissions, network use, install evidence, options, rollback, and compatibility before installation |
 | **HUB distribution** | HUB Setup, HUB Runtime, and developer builds | Provides the independent Windows WebView2 host, HUB CONFIG, private Node.js runtime, and offline recovery |
 
 The HUB does **not** claim that arbitrary GitHub source can safely become an EXE. Online entries are rendered as **virtual Setup experiences** backed by inspectable recipes. Standalone Setup EXEs belong to the curated library and are accepted only after repeatable installation, launch, update, and uninstall checks.
@@ -71,7 +73,7 @@ flowchart LR
   Runtime --> Profiles["Desktop profile · HUB profile"]
 ```
 
-Read the full [architecture guide](docs/architecture.md) and [desktop distribution boundary](docs/desktop-distribution.md).
+Read the full [architecture guide](docs/architecture.md) and [desktop distribution boundary](docs/hub/desktop-distribution.md).
 
 ## Repository map
 
@@ -102,13 +104,12 @@ The build entry checks Node.js, pnpm, and WebView2 SDK prerequisites and writes 
 ## Publish a Setup
 
 1. Read the [Setup package specification](docs/hub/setup-package-spec.md).
-2. Start from [`examples/setup-package/manifest.json`](examples/setup-package/manifest.json).
-   For editable local or AI-assisted builds, also read [Custom Setup Workspaces](docs/hub/custom-workspaces.md) and start from [`examples/setup-workspace/manifest.json`](examples/setup-workspace/manifest.json).
+2. Start from [`examples/setup-package/manifest.json`](examples/setup-package/manifest.json). For editable local or AI-assisted builds, also read [Custom Setup Workspaces](docs/hub/custom-workspaces.md) and start from [`examples/setup-workspace/manifest.json`](examples/setup-workspace/manifest.json).
 3. Run `npm run validate` locally.
 4. Open a **Setup submission** issue with installation evidence.
 5. Submit a pull request after the package has stable install and uninstall behavior.
 
-Standalone EXEs additionally require hashes, publisher information, privilege declaration, a clean-machine install log, launch evidence, update behavior, and uninstall residue notes.
+Standalone EXEs additionally require hashes, source identity, privilege declaration, a clean-machine install log, launch evidence, update behavior, and uninstall residue notes.
 
 ## Status
 

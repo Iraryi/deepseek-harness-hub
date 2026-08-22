@@ -369,7 +369,7 @@ export function translationStructureSignature(
           : `bullet:items=${node.children.length}`)
         break
       case 'link':
-        if (!acceptedSwitchers.has(node.url)) sig.links.push(node.url)
+        if (!acceptedSwitchers.has(node.url)) sig.links.push(normalizePairedMarkdownLink(node.url))
         break
       default:
         // Every other node kind is prose or a container, not part of the signature.
@@ -379,6 +379,12 @@ export function translationStructureSignature(
   }
   visit(tree)
   return sig
+}
+
+function normalizePairedMarkdownLink(url: string): string {
+  const target = url.split('#', 1)[0] ?? url
+  if (!target.endsWith('.md') && !target.endsWith('.zh.md')) return url
+  return target.endsWith('.zh.md') ? `${target.slice(0, -'.zh.md'.length)}.md` : target
 }
 
 /** Render a signature element for an error message, truncated for readability. */

@@ -263,6 +263,12 @@
     - id: ui-settings-plugins
       name: '@deepseek-ai/dsh-client-ui-settings-plugins'
 
+    # HUB is a browser-surface overlay activated by the native dsh-hub.exe
+    # query token; it remains mounted in the shared Web roster so the token
+    # can select the HUB surface without requiring a separate server profile.
+    - id: ui-setup-hub
+      name: '@deepseek-ai/dsh-client-ui-setup-hub'
+
     # Plan control: the composer plan seat over the plan projection + /plan channel.
     - id: ui-plan
       name: '@deepseek-ai/dsh-client-ui-plan'

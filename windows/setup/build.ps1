@@ -21,6 +21,7 @@ $webViewOffline = Join-Path $setupRoot 'cache\MicrosoftEdgeWebView2RuntimeInstal
 $webViewBootstrapper = Join-Path $setupRoot 'cache\MicrosoftEdgeWebview2Setup.exe'
 $requiredLauncherFiles = @(
     'dsh.exe',
+    'dsh-hub.exe',
     'dsh-config.exe',
     'Microsoft.Web.WebView2.Core.dll',
     'Microsoft.Web.WebView2.WinForms.dll',
