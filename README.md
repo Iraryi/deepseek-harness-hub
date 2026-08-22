@@ -9,14 +9,14 @@
   Discover, understand, install, update, repair, and compose the DeepSeek Harness ecosystem from one desktop-native control center.
 </p>
 
-[中文](README.zh.md)
+<div align="center">
 
-<p align="center">
-  <a href="README.zh.md">简体中文</a> ·
+  [简体中文](README.zh.md) ·
   <a href="https://github.com/Iraryi/deepseek-harness-hub/releases">Downloads</a> ·
   <a href="docs/hub/setup-package-spec.md">Setup specification</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
-</p>
+
+</div>
 
 <p align="center">
   <img alt="License" src="https://img.shields.io/github/license/Iraryi/deepseek-harness-hub?style=flat-square" />
