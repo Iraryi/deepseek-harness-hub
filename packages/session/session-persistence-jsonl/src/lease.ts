@@ -31,7 +31,6 @@
 import { mkdir, open, stat } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
-import { flock } from 'fs-ext'
 import { SessionAlreadyOwnedError } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { acquireLockHandleWin32, releaseLockHandleWin32 } from './win32.ts'
@@ -44,14 +43,18 @@ type HeldLock =
   | { readonly kind: 'posix'; readonly handle: FileHandle }
   | { readonly kind: 'win32'; readonly handle: number }
 
-/** Promise face over fs-ext's callback flock, pinned to its string-flag overload. */
+type Flock = typeof import('fs-ext').flock
+
+let flockImplementation: Promise<Flock> | undefined
+
 function flockAsync(fd: number, flags: 'exnb' | 'un'): Promise<void> {
-  return new Promise((resolve, reject) => {
+  const implementation = flockImplementation ??= import('fs-ext').then(module => module.flock)
+  return implementation.then(flock => new Promise((resolve, reject) => {
     flock(fd, flags, (error) => {
       if (error) reject(error)
       else resolve()
     })
-  })
+  }))
 }
 
 /** Whether a flock failure means another descriptor holds the lock. */
