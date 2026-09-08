@@ -7,6 +7,7 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import AgentRegistry, { assembleContextFor } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
@@ -27,11 +28,12 @@ async function harness(roster: Partial<Config> = {}): Promise<Context> {
   ctx.loader.builtins.include = Include
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
-  await ctx.plugin(SystemPrompt, { persona: '' })
+  await ctx.plugin(SystemPrompt, { personaPrefix: '' })
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
-  await ctx.plugin(AgentPresets, { default: 'standard', roots: ROOTS, includeUserRoot: false, ...roster })
+  await ctx.plugin(AgentPresets, { default: 'standard', roots: ROOTS, includeShippedRoot: false, includeUserRoot: false, ...roster })
   await ctx.plugin(InvariantRegistry)
   await ctx.plugin(AgentPresetsInvariant)
   return ctx

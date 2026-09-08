@@ -18,3 +18,4 @@
 
 - 目录客户端不负责持久化缓存文件或下载资产；桌面 HUB 负责这些策略。
 - 独立的 [Setup 库](https://github.com/Iraryi/deepseek-harness-setups)负责 GitHub 发现、独立 EXE 构建、隔离、审核、SBOM 与签名记录。在目录本身具备可信分发前，不启用在线认证等级刷新。
+- 本包不发布 `./invariant` 伴生模块：目录解析与排序只是对输入索引的纯操作，没有独立的运行时关系。

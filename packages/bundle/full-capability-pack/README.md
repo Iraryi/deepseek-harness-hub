@@ -19,3 +19,4 @@ The package itself adds no model tokens or cache invalidation; the selected pres
 - Existing sessions keep the preset under which they started.
 - Third-party API connectors and community plugins remain separately reviewed Setup entries.
 - The package does not claim that a provider will expose hidden chain-of-thought content.
+- No invariant companion is published because this bundle declares a static patch composition and owns no independent runtime observation.

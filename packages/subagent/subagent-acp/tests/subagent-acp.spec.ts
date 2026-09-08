@@ -1,14 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { PassThrough, type Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import type { SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import * as acp from '../src/index.ts'
 import { acpStopReason, acpContentText, DEFAULT_DISPOSE_EOF_GRACE_MS, DEFAULT_DISPOSE_GRACE_MS, disposeAcpChild, startAcpRun, toAcpPrompt, type AcpRunSpec } from '../src/run.ts'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
@@ -43,6 +45,7 @@ interface SetupEnv {
  */
 async function setup(mockEnv: SetupEnv = {}, permission: 'allow' | 'reject' = 'reject') {
   const ctx = new Context()
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(LocalSubprocessRuntime)
   await ctx.plugin(acp, {
@@ -59,6 +62,14 @@ function text(blocks: { type: string; text?: string }[]): string {
   return blocks.filter(b => b.type === 'text').map(b => b.text).join('')
 }
 
+function expectedFailure(fields: string): string {
+  return `Subagent failure (provider: ACP; ${fields})`
+}
+
+function expectedPermission(policy: 'allow' | 'reject', requestKind: string, decision: 'allowed' | 'denied'): string {
+  return `ACP unattended decision (policy: ${policy}; request: ${requestKind}; decision: ${decision})`
+}
+
 /**
  * Poll until `file` exists (the mock touches it once its prompt is in flight),
  * so a cancel test waits on a CONDITION rather than an arbitrary timeout — the
@@ -70,6 +81,99 @@ async function waitForFile(file: string, timeoutMs = 5000): Promise<void> {
   while (!existsSync(file)) {
     if (Date.now() > deadline) throw new Error(`mock child never became ready (${file})`)
     await new Promise(r => setTimeout(r, 10))
+  }
+}
+
+function rejectFinalExitWait(child: SubprocessHandle, message: string): SubprocessHandle {
+  return {
+    stdin: child.stdin,
+    stdout: child.stdout,
+    stderr: child.stderr,
+    collected: child.collected,
+    done: child.done,
+    terminate: () => { child.terminate() },
+    waitForExit: (signal?: AbortSignal) => signal === undefined
+      ? Promise.reject(new Error(message))
+      : Promise.resolve(false),
+  }
+}
+
+function rejectFinalExitWaitAfterExit(child: SubprocessHandle, message: string): SubprocessHandle {
+  return {
+    ...rejectFinalExitWait(child, message),
+    waitForExit: (signal?: AbortSignal) => signal === undefined
+      ? child.done.then(() => Promise.reject(new Error(message)))
+      : Promise.resolve(false),
+  }
+}
+
+function tapBoundedExitWait(child: SubprocessHandle, onWait: () => void): SubprocessHandle {
+  return {
+    stdin: child.stdin,
+    stdout: child.stdout,
+    stderr: child.stderr,
+    collected: child.collected,
+    done: child.done,
+    terminate: () => { child.terminate() },
+    waitForExit: (signal?: AbortSignal) => {
+      if (signal !== undefined) onWait()
+      return child.waitForExit(signal)
+    },
+  }
+}
+
+function replaceProtocolStreams(
+  child: SubprocessHandle,
+  stdin: PassThrough,
+  stdout: Readable,
+): SubprocessHandle {
+  if (child.stdin === undefined) throw new Error('expected piped child stdin')
+  stdin.pipe(child.stdin)
+  return {
+    stdin,
+    stdout,
+    stderr: child.stderr,
+    collected: child.collected,
+    done: child.done,
+    terminate: () => { child.terminate() },
+    waitForExit: (signal?: AbortSignal) => child.waitForExit(signal),
+  }
+}
+
+function closeProtocolImmediately(child: SubprocessHandle): SubprocessHandle {
+  const stdout = new PassThrough()
+  stdout.end()
+  return replaceProtocolStreams(child, new PassThrough(), stdout)
+}
+
+function closeProtocolOnPrompt(child: SubprocessHandle, onClose: () => void = () => {}): SubprocessHandle {
+  if (child.stdout === undefined) throw new Error('expected piped child stdout')
+  const stdin = new PassThrough()
+  const stdout = new PassThrough()
+  child.stdout.pipe(stdout)
+  let requestText = ''
+  let closed = false
+  stdin.on('data', (chunk: Buffer) => {
+    if (closed) return
+    requestText += chunk.toString('utf8')
+    if (!requestText.includes('"session/prompt"')) return
+    closed = true
+    child.stdout?.unpipe(stdout)
+    stdout.end()
+    onClose()
+  })
+  return replaceProtocolStreams(child, stdin, stdout)
+}
+
+function replaceProcessOutcome(child: SubprocessHandle, outcome: SubprocessOutcome): SubprocessHandle {
+  return {
+    stdin: child.stdin,
+    stdout: child.stdout,
+    stderr: child.stderr,
+    collected: child.collected,
+    done: child.done.then(() => outcome),
+    terminate: () => { child.terminate() },
+    waitForExit: (signal?: AbortSignal) => child.waitForExit(signal),
   }
 }
 
@@ -186,6 +290,56 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
     expectHostTermination(outcome, 'SIGKILL')
   })
 
+  it('waits for observed tree exit after the EOF grace and termination request', async () => {
+    vi.useFakeTimers()
+    const exited = Promise.withResolvers<boolean>()
+    const stdin = new PassThrough()
+    const calls: string[] = []
+    const child: SubprocessHandle = {
+      stdin,
+      stdout: undefined,
+      stderr: undefined,
+      collected: {},
+      done: exited.promise.then(() => ({ exitCode: 1, signal: null })),
+      terminate: () => { calls.push('terminate') },
+      waitForExit: (signal?: AbortSignal) => {
+        if (signal === undefined) {
+          calls.push('wait for exit')
+          return exited.promise
+        }
+        calls.push('wait for EOF')
+        return new Promise((resolve) => {
+          signal.addEventListener('abort', () => { resolve(false) }, { once: true })
+        })
+      },
+    }
+    let disposal: Promise<void> | undefined
+    try {
+      let disposed = false
+      disposal = disposeAcpChild(child, 150).then(() => { disposed = true })
+      expect(stdin.writableEnded).toBe(true)
+      await vi.advanceTimersByTimeAsync(149)
+      expect(calls).toEqual(['wait for EOF'])
+      await vi.advanceTimersByTimeAsync(1)
+      expect(calls).toEqual(['wait for EOF', 'terminate', 'wait for exit'])
+      // Advancing the clock cannot stand in for the process owner's exit proof.
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(disposed).toBe(false)
+      exited.resolve(true)
+      await disposal
+      expect(disposed).toBe(true)
+    } finally {
+      exited.resolve(true)
+      try {
+        await vi.runAllTimersAsync()
+        await disposal
+      } finally {
+        stdin.destroy()
+        vi.useRealTimers()
+      }
+    }
+  })
+
   it('observes a spawn-level rejection and returns without a process to reap', async () => {
     const child = spawnSubprocess({
       argv: [process.execPath, '--input-type=module', '--eval', ''],
@@ -195,6 +349,98 @@ describe('disposeAcpChild (the backend-owned teardown ladder over seam verbs)', 
     })
     await expect(disposeAcpChild(child, 1_000)).resolves.toBeUndefined()
     await expect(child.done).rejects.toThrow()
+  })
+
+  it('still terminates and performs the final wait when the EOF wait rejects', async () => {
+    const initialFailure = new Error('initial range observation failed')
+    const waitForExit = vi.fn()
+      .mockRejectedValueOnce(initialFailure)
+      .mockResolvedValueOnce(true)
+    const terminate = vi.fn()
+    const child: SubprocessHandle = {
+      stdin: new PassThrough(),
+      stdout: undefined,
+      stderr: undefined,
+      collected: {},
+      done: new Promise(() => {}),
+      terminate,
+      waitForExit,
+    }
+
+    await expect(disposeAcpChild(child, 1_000)).rejects.toBe(initialFailure)
+    expect(terminate).toHaveBeenCalledOnce()
+    expect(waitForExit).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves both wait failures in observation order', async () => {
+    const initialFailure = new Error('initial range observation failed')
+    const finalFailure = new Error('final range observation failed')
+    const waitForExit = vi.fn()
+      .mockRejectedValueOnce(initialFailure)
+      .mockRejectedValueOnce(finalFailure)
+    const child: SubprocessHandle = {
+      stdin: new PassThrough(),
+      stdout: undefined,
+      stderr: undefined,
+      collected: {},
+      done: new Promise(() => {}),
+      terminate: vi.fn(),
+      waitForExit,
+    }
+
+    let failure: unknown
+    try {
+      await disposeAcpChild(child, 1_000)
+    } catch (error: unknown) {
+      failure = error
+    }
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([initialFailure, finalFailure])
+  })
+
+  it('keeps an initialize transport failure before its rollback failure', async () => {
+    const startupFailure = new Error('target startup failed')
+    const cleanupFailure = new Error('range cleanup failed')
+    const direct = Promise.withResolvers<SubprocessOutcome>()
+    const stdin = new PassThrough()
+    const stdout = new PassThrough()
+    const child: SubprocessHandle = {
+      stdin,
+      stdout,
+      stderr: undefined,
+      collected: {},
+      done: direct.promise,
+      terminate: vi.fn(),
+      waitForExit: vi.fn()
+        .mockResolvedValueOnce(false)
+        .mockRejectedValueOnce(cleanupFailure),
+    }
+    const starting = startAcpRun(request(), {
+      command: 'fake-acp',
+      args: [],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: {},
+      disposeEofGraceMs: 1_000,
+      disposeGraceMs: 1_000,
+      spawn: () => child,
+    })
+    direct.reject(startupFailure)
+
+    let failure: unknown
+    try {
+      await starting
+    } catch (error: unknown) {
+      failure = error
+    }
+    expect(failure).toBeInstanceOf(AggregateError)
+    const failures = (failure as AggregateError).errors as Error[]
+    expect(failures.map(error => error.message)).toEqual([
+      `subagent-acp: ${expectedFailure('stage: initialize; category: transport')}`,
+      `subagent-acp: ${expectedFailure('stage: teardown; category: unknown')}`,
+    ])
+    expect(failures[0]?.cause).toBe(startupFailure)
+    expect(failures[1]?.cause).toBe(cleanupFailure)
   })
 })
 
@@ -222,13 +468,14 @@ describe('cwd resolution', () => {
     const sentinel = join(tmp, 'spawned')
     try {
       const ctx = new Context()
+      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(SubagentRuntime)
       await ctx.plugin(LocalSubprocessRuntime)
       // A command that would create the sentinel if the child were ever spawned.
       await ctx.plugin(acp, { providerName: 'acp', command: 'touch', args: [sentinel], permission: 'reject', env: {} })
       const parent = { id: 'parent', session: { header: {} } } as unknown as Agent
       await expect(ctx.subagents.start('acp', { prompt: [{ type: 'text' as const, text: 'p' }], parent, signal: new AbortController().signal }))
-        .rejects.toThrow('no working directory')
+        .rejects.toThrow(`subagent-acp: ${expectedFailure('stage: initialize; category: configuration')}`)
       // Resolution failed BEFORE the process boundary — nothing was launched.
       expect(existsSync(sentinel)).toBe(false)
     } finally {
@@ -241,6 +488,7 @@ describe('cwd resolution', () => {
     const parentDir = realpathSync(mkdtempSync(join(tmpdir(), 'acp-parent-cwd-')))
     try {
       const ctx = new Context()
+      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(SubagentRuntime)
       await ctx.plugin(LocalSubprocessRuntime)
       await ctx.plugin(acp, {
@@ -269,6 +517,7 @@ describe('cwd resolution', () => {
     const relative = 'packages/subagent/subagent-acp'
     const absolute = resolve(relative)
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(LocalSubprocessRuntime)
     await ctx.plugin(acp, {
@@ -289,6 +538,7 @@ describe('cwd resolution', () => {
     // `path.resolve('')` is the process cwd, so an empty string would silently
     // reintroduce the launch-directory fallback this resolution removed.
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(LocalSubprocessRuntime)
     await expect(ctx.plugin(acp, {
@@ -310,6 +560,7 @@ describe('cwd resolution', () => {
     chmodSync(tmp, 0o600)
     try {
       const ctx = new Context()
+      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(SubagentRuntime)
       await ctx.plugin(LocalSubprocessRuntime)
       await expect(ctx.plugin(acp, {
@@ -329,6 +580,7 @@ describe('cwd resolution', () => {
 
   it('rejects a config cwd that is not an accessible directory at load', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(LocalSubprocessRuntime)
     await expect(ctx.plugin(acp, {
@@ -349,7 +601,7 @@ describe('cwd resolution', () => {
     const ctx = await setup({})
     const parent = { id: 'parent', session: { header: { cwd: 'relative/workspace' } } } as unknown as Agent
     await expect(ctx.subagents.start('acp', { prompt: [{ type: 'text' as const, text: 'p' }], parent, signal: new AbortController().signal }))
-      .rejects.toThrow('must be an absolute path')
+      .rejects.toThrow(`subagent-acp: ${expectedFailure('stage: initialize; category: configuration')}`)
   })
 
   it('rejects a parent session cwd that names a FILE, not a directory', async () => {
@@ -360,7 +612,7 @@ describe('cwd resolution', () => {
       const ctx = await setup({})
       const parent = { id: 'parent', session: { header: { cwd: file } } } as unknown as Agent
       await expect(ctx.subagents.start('acp', { prompt: [{ type: 'text' as const, text: 'p' }], parent, signal: new AbortController().signal }))
-        .rejects.toThrow('not an accessible directory')
+        .rejects.toThrow(`subagent-acp: ${expectedFailure('stage: initialize; category: configuration')}`)
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -371,12 +623,13 @@ describe('cwd resolution', () => {
     const sentinel = join(tmp, 'spawned')
     try {
       const ctx = new Context()
+      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(SubagentRuntime)
       await ctx.plugin(LocalSubprocessRuntime)
       await ctx.plugin(acp, { providerName: 'acp', command: 'touch', args: [sentinel], permission: 'reject', env: {} })
       const parent = { id: 'parent', session: { header: { cwd: join(tmp, 'vanished') } } } as unknown as Agent
       await expect(ctx.subagents.start('acp', { prompt: [{ type: 'text' as const, text: 'p' }], parent, signal: new AbortController().signal }))
-        .rejects.toThrow('not an accessible directory')
+        .rejects.toThrow(`subagent-acp: ${expectedFailure('stage: initialize; category: configuration')}`)
       expect(existsSync(sentinel)).toBe(false)
     } finally {
       rmSync(tmp, { recursive: true, force: true })
@@ -391,6 +644,7 @@ describe('dsh-subagent-acp', () => {
     expect(run.id).not.toBe('acp-child-session')
     const result = await run.result
     expect(result.stopReason).toBe('completed')
+    expect(result.diagnostic).toBeUndefined()
     expect(text(result.output)).toBe('hello from acp child')
     const disposal = run.dispose()
     expect(run.dispose()).toBe(disposal)
@@ -408,6 +662,7 @@ describe('dsh-subagent-acp', () => {
     const run = await ctx.subagents.start('acp', request())
     const result = await run.result
     expect(result.stopReason).toBe('max-tokens')
+    expect(result.diagnostic).toBeUndefined()
     await run.dispose()
   })
 
@@ -416,6 +671,56 @@ describe('dsh-subagent-acp', () => {
     const run = await ctx.subagents.start('acp', request())
     const result = await run.result
     expect(result.stopReason).toBe('refusal')
+    expect(result.diagnostic).toBeUndefined()
+    await run.dispose()
+  })
+
+  it.each([
+    ['max_tokens', 'max-tokens'],
+    ['refusal', 'refusal'],
+  ] as const)('adds a permission fact to %s without changing its stop reason', async (remote, stopReason) => {
+    const ctx = await setup({
+      MOCK_PERMISSION: '1',
+      MOCK_PERMISSION_IGNORE_DECISION: '1',
+      MOCK_TOOL_KIND: 'read',
+      MOCK_STOP: remote,
+    }, 'reject')
+    const run = await ctx.subagents.start('acp', request())
+    const result = await run.result
+    expect(result.stopReason).toBe(stopReason)
+    expect(result.diagnostic).toBe(expectedPermission('reject', 'read', 'denied'))
+    await run.dispose()
+  })
+
+  it('keeps an ordinary remote cancelled stop diagnostic-free', async () => {
+    const ctx = await setup({ MOCK_STOP: 'cancelled' })
+    const run = await ctx.subagents.start('acp', request())
+    await expect(run.result).resolves.toEqual({ output: [{ type: 'text', text: 'mock child answer' }], stopReason: 'aborted' })
+    await run.dispose()
+  })
+
+  it('preserves max_turn_requests as an actionable remote limit', async () => {
+    const ctx = await setup({ MOCK_TEXT: 'partial', MOCK_STOP: 'max_turn_requests' })
+    const run = await ctx.subagents.start('acp', request())
+    const result = await run.result
+    expect(result).toEqual({
+      output: [{ type: 'text', text: 'partial' }],
+      diagnostic: expectedFailure('stage: prompt; category: remote-limit; stop reason: max_turn_requests'),
+      stopReason: 'error',
+    })
+    await run.dispose()
+  })
+
+  it('uses a fixed fallback for an unknown remote stop reason', async () => {
+    const rawReason = 'private/path/SECRET_TOKEN'
+    const ctx = await setup({ MOCK_TEXT: 'partial', MOCK_STOP: rawReason })
+    const run = await ctx.subagents.start('acp', request())
+    const result = await run.result
+    expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(
+      expectedFailure('stage: prompt; category: unknown; stop reason: unknown'),
+    )
+    expect(result.diagnostic).not.toContain(rawReason)
     await run.dispose()
   })
 
@@ -432,6 +737,7 @@ describe('dsh-subagent-acp', () => {
       controller.abort('test')
       const result = await run.result
       expect(result.stopReason).toBe('aborted')
+      expect(result.diagnostic).toBeUndefined()
       await run.dispose()
     } finally {
       rmSync(tmp, { recursive: true, force: true })
@@ -459,9 +765,86 @@ describe('dsh-subagent-acp', () => {
     }
   })
 
+  it('rejects a pre-aborted request through the registered provider before cwd resolution', async () => {
+    const ctx = await setup()
+    const controller = new AbortController()
+    controller.abort()
+    const parent = { id: 'parent', session: { header: {} } } as unknown as Agent
+    await expect(ctx.subagents.start('acp', {
+      prompt: [{ type: 'text' as const, text: 'p' }],
+      parent,
+      signal: controller.signal,
+    })).rejects.toThrow('subagent request was aborted before the ACP child started')
+  })
+
+  it('reports an initialize-stage process exit without copying the transport error', async () => {
+    const error = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_CRASH_ON_INITIALIZE: '1' },
+      disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: spec => spawnSubprocess(spec),
+    }).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe(
+      `subagent-acp: ${expectedFailure('stage: initialize; category: process-exit; exit code: 11')}`,
+    )
+  })
+
+  it('reports initialize-stage transport when the child closes the protocol but stays alive', async () => {
+    const error = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: {},
+      disposeEofGraceMs: 50,
+      disposeGraceMs: 50,
+      spawn: spec => closeProtocolImmediately(spawnSubprocess(spec)),
+    }).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe(
+      `subagent-acp: ${expectedFailure('stage: initialize; category: transport')}`,
+    )
+  })
+
+  it('reuses a direct outcome already observed before the startup transport closes', async () => {
+    const outcome = { exitCode: 19, signal: null } as const
+    const stdin = new PassThrough()
+    const stdout = new PassThrough()
+    const starting = startAcpRun(request(), {
+      command: 'fake-acp',
+      args: [],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: {},
+      disposeEofGraceMs: 50,
+      disposeGraceMs: 50,
+      spawn: () => ({
+        stdin,
+        stdout,
+        stderr: undefined,
+        collected: {},
+        done: Promise.resolve(outcome),
+        terminate: vi.fn(),
+        waitForExit: vi.fn().mockResolvedValue(true),
+      }),
+    })
+    await Promise.resolve()
+    stdout.end()
+
+    await expect(starting).rejects.toThrow(
+      `subagent-acp: ${expectedFailure('stage: initialize; category: process-exit; exit code: 19')}`,
+    )
+  })
+
   it('reaps a child whose session/new response omits the session id', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'acp-malformed-session-'))
     const flushed = join(tmp, 'flushed')
+    let boundedWaits = 0
     try {
       await expect(startAcpRun(request(), {
         command: process.execPath,
@@ -475,11 +858,83 @@ describe('dsh-subagent-acp', () => {
         },
         disposeEofGraceMs: 1000,
         disposeGraceMs: 100,
-        spawn: spawnSubprocess,
-      })).rejects.toThrow('ACP child published without a session id')
+        spawn: spec => tapBoundedExitWait(spawnSubprocess(spec), () => { boundedWaits += 1 }),
+      })).rejects.toThrow(
+        `subagent-acp: ${expectedFailure('stage: new-session; category: protocol')}`,
+      )
       // Startup rejects only after its private child reaches quiescence. The
       // marker proves rollback closed stdin and allowed the child's EOF flush.
       expect(existsSync(flushed)).toBe(true)
+      expect(boundedWaits).toBe(1)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('aggregates safe startup and teardown facts when rollback itself fails', async () => {
+    const rawCleanup = 'rollback leaked /private/path SECRET_TOKEN'
+    let realChild: SubprocessHandle | undefined
+    const errors: string[] = []
+    const error = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_MISSING_SESSION_ID: '1' },
+      disposeEofGraceMs: 10,
+      disposeGraceMs: 10,
+      spawn: (spec) => {
+        realChild = spawnSubprocess(spec)
+        return rejectFinalExitWaitAfterExit(realChild, rawCleanup)
+      },
+      onError: (failure) => { errors.push(failure.message) },
+    }).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(AggregateError)
+    expect((error as Error).message).toContain(
+      `subagent-acp: ${expectedFailure('stage: new-session; category: protocol')}; `
+      + 'subagent-acp: Subagent failure (provider: ACP; stage: teardown; category: process-exit;',
+    )
+    expect((error as Error).message).not.toContain(rawCleanup)
+    expect(errors).toContain('ACP child published without a session id')
+    expect(errors).toContain(rawCleanup)
+    await realChild?.done
+  })
+
+  it('reports only the safe teardown failure when cancelled startup rollback fails', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'acp-cancelled-rollback-'))
+    const ready = join(tmp, 'ready')
+    const go = join(tmp, 'go')
+    const rawCleanup = 'cancel rollback leaked SECRET_TOKEN'
+    const errors: string[] = []
+    let realChild: SubprocessHandle | undefined
+    try {
+      const controller = new AbortController()
+      const starting = startAcpRun(request('p', controller.signal), {
+        command: process.execPath,
+        args: [mockServer],
+        cwd: process.cwd(),
+        permission: 'reject',
+        env: { MOCK_NEWSESSION_READY: ready, MOCK_NEWSESSION_GO: go },
+        disposeEofGraceMs: 10,
+        disposeGraceMs: 10,
+        spawn: (spec) => {
+          realChild = spawnSubprocess(spec)
+          return rejectFinalExitWait(realChild, rawCleanup)
+        },
+        onError: (error) => { errors.push(error.message) },
+      })
+      await waitForFile(ready)
+      controller.abort()
+      writeFileSync(go, 'go')
+      const error = await starting.catch((cause: unknown) => cause)
+      expect(error).toBeInstanceOf(AggregateError)
+      expect((error as AggregateError).errors).toHaveLength(1)
+      expect((error as Error).message).toBe(
+        `subagent-acp: ${expectedFailure('stage: teardown; category: unknown')}`,
+      )
+      expect((error as Error).message).not.toContain(rawCleanup)
+      expect(errors).toEqual([rawCleanup])
+      await realChild?.done
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }
@@ -572,6 +1027,8 @@ describe('dsh-subagent-acp', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'acp-ignore-eof-'))
     const ready = join(tmp, 'ready')
     const sigterm = join(tmp, 'sigterm')
+    let child: SubprocessHandle | undefined
+    let run: Awaited<ReturnType<typeof startAcpRun>> | undefined
     try {
       const spec: AcpRunSpec = {
         command: process.execPath,
@@ -585,18 +1042,32 @@ describe('dsh-subagent-acp', () => {
         // Tiny EOF grace so the ignored-EOF window elapses quickly.
         disposeEofGraceMs: 150,
         disposeGraceMs: 2000,
-        spawn: spawnSubprocess,
+        spawn: (spec) => {
+          child = spawnSubprocess(spec)
+          return child
+        },
       }
-      const run = await startAcpRun(request(), spec)
+      run = await startAcpRun(request(), spec)
       await waitForFile(ready)
-      // Bound it so a hang fails loud rather than stalling the suite.
-      await expect(Promise.race([
-        run.dispose(),
-        new Promise((_r, reject) => { setTimeout(() => { reject(new Error('dispose did not return')) }, 5000) }),
-      ])).resolves.toBeUndefined()
+      await run.dispose()
+      const outcome = await child!.done
+      expect(outcome.signal).toBeNull()
+      if (process.platform === 'win32') {
+        expect(outcome.exitCode).not.toBeNull()
+        expect(outcome.exitCode).not.toBe(0)
+      } else {
+        expect(outcome.exitCode).toBe(0)
+      }
       expect(existsSync(sigterm)).toBe(process.platform !== 'win32')
     } finally {
-      rmSync(tmp, { recursive: true, force: true })
+      try {
+        await run?.dispose()
+      } finally {
+        child?.terminate()
+        await child?.waitForExit()
+        await child?.done
+        rmSync(tmp, { recursive: true, force: true })
+      }
     }
   })
 
@@ -632,6 +1103,7 @@ describe('dsh-subagent-acp', () => {
       controller.abort()
       const result = await run.result
       expect(result.stopReason).toBe('aborted')
+      expect(result.diagnostic).toBeUndefined()
       await run.dispose()
     } finally {
       rmSync(tmp, { recursive: true, force: true })
@@ -639,11 +1111,12 @@ describe('dsh-subagent-acp', () => {
   })
 
   it('auto-rejects a permission prompt by default (child settles cancelled→aborted)', async () => {
-    const ctx = await setup({ MOCK_TEXT: 'x', MOCK_PERMISSION: '1' }, 'reject')
+    const ctx = await setup({ MOCK_TEXT: 'x', MOCK_PERMISSION: '1', MOCK_TOOL_KIND: 'execute' }, 'reject')
     const run = await ctx.subagents.start('acp', request())
     const result = await run.result
     // The child asked permission, the backend rejected, the child returned cancelled.
     expect(result.stopReason).toBe('aborted')
+    expect(result.diagnostic).toBe(expectedPermission('reject', 'execute', 'denied'))
     await run.dispose()
   })
 
@@ -652,6 +1125,7 @@ describe('dsh-subagent-acp', () => {
     const run = await ctx.subagents.start('acp', request())
     const result = await run.result
     expect(result.stopReason).toBe('completed')
+    expect(result.diagnostic).toBeUndefined()
     expect(text(result.output)).toBe('approved answer')
     await run.dispose()
   })
@@ -663,6 +1137,41 @@ describe('dsh-subagent-acp', () => {
     const run = await ctx.subagents.start('acp', request())
     const result = await run.result
     expect(result.stopReason).toBe('aborted')
+    expect(result.diagnostic).toBe(expectedPermission('allow', 'unknown', 'denied'))
+    await run.dispose()
+  })
+
+  it('appends a rejected permission fact to a later remote failure', async () => {
+    const ctx = await setup({
+      MOCK_PERMISSION: '1',
+      MOCK_PERMISSION_IGNORE_DECISION: '1',
+      MOCK_TOOL_KIND: 'edit',
+      MOCK_STOP: 'max_turn_requests',
+    }, 'reject')
+    const run = await ctx.subagents.start('acp', request())
+    const result = await run.result
+    expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(
+      `${expectedFailure('stage: prompt; category: remote-limit; stop reason: max_turn_requests')}\n`
+      + expectedPermission('reject', 'edit', 'denied'),
+    )
+    await run.dispose()
+  })
+
+  it('appends an allowed permission fact only when the run later fails', async () => {
+    const ctx = await setup({
+      MOCK_PERMISSION: '1',
+      MOCK_PERMISSION_IGNORE_DECISION: '1',
+      MOCK_TOOL_KIND: 'execute',
+      MOCK_STOP: 'max_turn_requests',
+    }, 'allow')
+    const run = await ctx.subagents.start('acp', request())
+    const result = await run.result
+    expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(
+      `${expectedFailure('stage: prompt; category: remote-limit; stop reason: max_turn_requests')}\n`
+      + expectedPermission('allow', 'execute', 'allowed'),
+    )
     await run.dispose()
   })
 
@@ -678,14 +1187,177 @@ describe('dsh-subagent-acp', () => {
     await run.dispose()
   })
 
-  it('rejects a spawn failure after provider-owned cleanup', async () => {
-    await expect(startAcpRun(
-      request(),
-      { command: '/nonexistent/acp-agent-binary', args: [], cwd: process.cwd(), permission: 'reject', env: {}, disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS, disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS, spawn: spawnSubprocess },
-    )).rejects.toThrow()
+  it('classifies a prompt transport failure without copying SDK text', async () => {
+    const run = await startAcpRun(request('private prompt text'), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_HANG: '1' },
+      disposeEofGraceMs: 100,
+      disposeGraceMs: 100,
+      spawn: spec => closeProtocolOnPrompt(spawnSubprocess(spec)),
+    })
+    const result = await run.result
+    expect(result).toEqual({
+      output: [],
+      diagnostic: expectedFailure('stage: prompt; category: transport'),
+      stopReason: 'error',
+    })
+    expect(result.diagnostic).not.toContain('private prompt text')
+    await run.dispose()
   })
 
-  it('plugin-config dispose graces reach the run (SIGKILL escalation through the provider)', async () => {
+  it('lets local cancellation interrupt prompt-failure process observation', async () => {
+    const controller = new AbortController()
+    const protocolEnded = Promise.withResolvers<undefined>()
+    let boundedExitWaits = 0
+    const run = await startAcpRun(request('p', controller.signal), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_HANG: '1' },
+      disposeEofGraceMs: 100,
+      disposeGraceMs: 5000,
+      spawn: (spec) => {
+        const child = spawnSubprocess(spec)
+        return closeProtocolOnPrompt(
+          tapBoundedExitWait(child, () => { boundedExitWaits += 1 }),
+          () => { protocolEnded.resolve(undefined) },
+        )
+      },
+    })
+    await protocolEnded.promise
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    controller.abort()
+    await expect(Promise.race([
+      run.result,
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(() => { reject(new Error('cancellation waited for process observation')) }, 500)
+      }),
+    ])).resolves.toEqual({ output: [], stopReason: 'aborted' })
+    expect(boundedExitWaits).toBe(0)
+    await run.dispose()
+  })
+
+  it('preserves partial output and structured process facts when the child exits', async () => {
+    const run = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_TEXT: 'partial answer', MOCK_CRASH_AFTER_CHUNK: '1' },
+      disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: spec => spawnSubprocess(spec),
+    })
+    const result = await run.result
+    expect(result).toEqual({
+      output: [{ type: 'text', text: 'partial answer' }],
+      diagnostic: expectedFailure('stage: process; category: process-exit; exit code: 17'),
+      stopReason: 'error',
+    })
+    await run.dispose()
+  })
+
+  it('classifies a rejected direct result as the active prompt transport failure', async () => {
+    const processFailure = new Error('remote provider failed after returning a handle')
+    const direct = Promise.withResolvers<SubprocessOutcome>()
+    let realChild: SubprocessHandle | undefined
+    const errors: Error[] = []
+    const run = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_HANG: '1' },
+      disposeEofGraceMs: 100,
+      disposeGraceMs: 100,
+      spawn: (spec) => {
+        const child = spawnSubprocess(spec)
+        realChild = child
+        return closeProtocolOnPrompt({
+          stdin: child.stdin,
+          stdout: child.stdout,
+          stderr: child.stderr,
+          collected: child.collected,
+          done: direct.promise,
+          terminate: () => { child.terminate() },
+          waitForExit: (signal?: AbortSignal) => child.waitForExit(signal),
+        }, () => { direct.reject(processFailure) })
+      },
+      onError: (error) => { errors.push(error) },
+    })
+    await expect(run.result).resolves.toEqual({
+      output: [],
+      diagnostic: expectedFailure('stage: prompt; category: transport'),
+      stopReason: 'error',
+    })
+    expect(errors).toContain(processFailure)
+    await run.dispose()
+    await realChild?.done
+  })
+
+  it('reports a signal-only process outcome', async () => {
+    const run = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_CRASH_AFTER_CHUNK: '1' },
+      disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: spec => replaceProcessOutcome(
+        spawnSubprocess(spec),
+        { exitCode: null, signal: 'SIGTERM' },
+      ),
+    })
+    const result = await run.result
+    expect(result).toEqual({
+      output: [{ type: 'text', text: 'mock child answer' }],
+      diagnostic: expectedFailure('stage: process; category: process-exit; signal: SIGTERM'),
+      stopReason: 'error',
+    })
+    await run.dispose()
+  })
+
+  it('rejects a returned-handle startup failure after provider-owned cleanup', async () => {
+    const privateCommand = '/nonexistent/private/SECRET_TOKEN/acp-agent'
+    const error = await startAcpRun(
+      request(),
+      { command: privateCommand, args: [], cwd: process.cwd(), permission: 'reject', env: {}, disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS, disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS, spawn: spawnSubprocess },
+    ).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe(
+      `subagent-acp: ${expectedFailure('stage: initialize; category: transport')}`,
+    )
+    expect((error as Error).message).not.toContain(privateCommand)
+  })
+
+  it('sanitizes a synchronous subprocess-provider spawn rejection', async () => {
+    const rawMessage = 'spawn rejected /private/path SECRET_TOKEN'
+    const errors: string[] = []
+    const error = await startAcpRun(request(), {
+      command: 'unused',
+      args: [],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: {},
+      disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: () => { throw new Error(rawMessage) },
+      onError: (failure) => { errors.push(failure.message) },
+    }).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe(
+      `subagent-acp: ${expectedFailure('stage: process; category: process-start')}`,
+    )
+    expect((error as Error).message).not.toContain(rawMessage)
+    expect(errors).toEqual([rawMessage])
+  })
+
+  it.skipIf(process.platform === 'win32')('plugin-config dispose graces reach the run (SIGKILL escalation through the provider)', async () => {
     // Same trap scenario as the direct startAcpRun escalation test, but the
     // graces arrive via the PLUGIN CONFIG through the registered provider — so a
     // regression that stops threading config into AcpRunSpec (falling back to
@@ -694,6 +1366,7 @@ describe('dsh-subagent-acp', () => {
     const ready = join(tmp, 'trap-armed')
     try {
       const ctx = new Context()
+      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(SubagentRuntime)
       await ctx.plugin(LocalSubprocessRuntime)
       await ctx.plugin(acp, {
@@ -727,6 +1400,7 @@ describe('dsh-subagent-acp', () => {
       { disposeGraceMs: MAX_TIMER_DELAY_MS + 1 },
     ]) {
       const ctx = new Context()
+      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(SubagentRuntime)
       await ctx.plugin(LocalSubprocessRuntime)
       await expect(ctx.plugin(acp, { providerName: 'acp', command: 'true', args: [], permission: 'reject', env: {}, ...bad }))
@@ -735,8 +1409,9 @@ describe('dsh-subagent-acp', () => {
     }
   })
 
-  it('rejects a startup failure via the provider load path', async () => {
+  it('classifies a returned-handle startup failure through the provider load path', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(LocalSubprocessRuntime)
     await ctx.plugin(acp, {
@@ -746,7 +1421,95 @@ describe('dsh-subagent-acp', () => {
       permission: 'reject',
       env: {},
     })
-    await expect(ctx.subagents.start('acp', request())).rejects.toThrow()
+    await expect(ctx.subagents.start('acp', request())).rejects.toThrow(
+      `subagent-acp: ${expectedFailure('stage: initialize; category: transport')}`,
+    )
+  })
+
+  it('keeps permission diagnostics isolated across concurrent runs', async () => {
+    const start = (permission: 'allow' | 'reject', kind: 'edit' | 'execute') => startAcpRun(
+      request(),
+      {
+        command: process.execPath,
+        args: [mockServer],
+        cwd: process.cwd(),
+        permission,
+        env: {
+          MOCK_PERMISSION: '1',
+          MOCK_PERMISSION_IGNORE_DECISION: '1',
+          MOCK_TOOL_KIND: kind,
+          MOCK_STOP: 'max_turn_requests',
+        },
+        disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+        disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+        spawn: spawnSubprocess,
+      },
+    )
+    const [allowed, denied] = await Promise.all([
+      start('allow', 'execute'),
+      start('reject', 'edit'),
+    ])
+    const [allowedResult, deniedResult] = await Promise.all([allowed.result, denied.result])
+    expect(allowedResult.diagnostic).toContain(expectedPermission('allow', 'execute', 'allowed'))
+    expect(allowedResult.diagnostic).not.toContain('policy: reject')
+    expect(deniedResult.diagnostic).toContain(expectedPermission('reject', 'edit', 'denied'))
+    expect(deniedResult.diagnostic).not.toContain('policy: allow')
+    await Promise.all([allowed.dispose(), denied.dispose()])
+  })
+
+  it('wraps a teardown rejection with safe facts and keeps the raw cause in Host diagnostics', async () => {
+    const rawMessage = 'teardown leaked /private/path SECRET_TOKEN'
+    const errors: string[] = []
+    let realChild: SubprocessHandle | undefined
+    const run = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_HANG: '1', MOCK_IGNORE_CANCEL: '1' },
+      disposeEofGraceMs: 10,
+      disposeGraceMs: 10,
+      spawn: (spec) => {
+        const child = spawnSubprocess(spec)
+        realChild = child
+        return rejectFinalExitWait(child, rawMessage)
+      },
+      onError: (error) => { errors.push(error.message) },
+    })
+    const error = await run.dispose().catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe(
+      `subagent-acp: ${expectedFailure('stage: teardown; category: unknown')}`,
+    )
+    expect((error as Error).message).not.toContain(rawMessage)
+    expect(errors).toContain(rawMessage)
+    await realChild?.done
+    await expect(run.result).resolves.toEqual({ output: [], stopReason: 'aborted' })
+  })
+
+  it('adds an observed process outcome to a teardown failure', async () => {
+    let realChild: SubprocessHandle | undefined
+    const run = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_HANG: '1', MOCK_IGNORE_CANCEL: '1' },
+      disposeEofGraceMs: 10,
+      disposeGraceMs: 10,
+      spawn: (spec) => {
+        const child = spawnSubprocess(spec)
+        realChild = child
+        return rejectFinalExitWaitAfterExit(child, 'post-exit wait failed')
+      },
+    })
+    const error = await run.dispose().catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toContain(
+      'subagent-acp: Subagent failure (provider: ACP; stage: teardown; category: process-exit;',
+    )
+    expect((error as Error).message).toMatch(/(?:exit code|signal): /)
+    await realChild?.done
   })
 
   it('reports a flattened child failure through onError (preserved, not silently lost)', async () => {
@@ -771,6 +1534,9 @@ describe('dsh-subagent-acp', () => {
     )
     const result = await run.result
     expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(
+      expectedFailure('stage: process; category: process-exit; exit code: 1'),
+    )
     expect(errors).toHaveLength(1)
     expect(errors[0]!.stopReason).toBe('error')
     expect(errors[0]!.message.length).toBeGreaterThan(0)
@@ -784,9 +1550,14 @@ describe('dsh-subagent-acp', () => {
     const run = await ctx.subagents.start('acp', request())
     const result = await run.result
     expect(result.stopReason).toBe('error')
-    expect(warnings).toEqual([
+    expect(result.diagnostic).toBe(
+      expectedFailure('stage: process; category: process-exit; exit code: 1'),
+    )
+    // Unsupported hosts can emit the subprocess provider's one-time fallback
+    // warning before this provider-specific failure reaches the same logger.
+    expect(warnings).toContainEqual(
       expect.stringContaining('subagent-acp "acp": child run failed (error):'),
-    ])
+    )
     await run.dispose()
   })
 
@@ -810,6 +1581,9 @@ describe('dsh-subagent-acp', () => {
     )
     const result = await run.result
     expect(result.stopReason).toBe('error')
+    expect(result.diagnostic).toBe(
+      expectedFailure('stage: process; category: process-exit; exit code: 1'),
+    )
     await run.dispose()
   })
 
@@ -828,6 +1602,7 @@ describe('dsh-subagent-acp', () => {
       controller.abort('crash it')
       const result = await run.result
       expect(result.stopReason).toBe('aborted')
+      expect(result.diagnostic).toBeUndefined()
       await run.dispose()
     } finally {
       rmSync(tmp, { recursive: true, force: true })
@@ -854,6 +1629,7 @@ describe('dsh-subagent-acp', () => {
         new Promise<never>((_r, reject) => { setTimeout(() => { reject(new Error('result did not settle on cancel — backend waited on the child')) }, 4000) }),
       ])
       expect(result.stopReason).toBe('aborted')
+      expect(result.diagnostic).toBeUndefined()
       await run.dispose()
     } finally {
       rmSync(tmp, { recursive: true, force: true })
@@ -863,11 +1639,18 @@ describe('dsh-subagent-acp', () => {
   it('advertises no start-time capabilities (out-of-process child)', async () => {
     const ctx = await setup()
     const provider = ctx.subagents.getProvider('acp')!
-    expect(provider.capabilities).toEqual({ outputSchema: false, depthLimit: false, toolFilter: false, persona: false })
+    expect(provider.capabilities).toEqual({
+      agentOptions: false,
+      outputSchema: false,
+      depthLimit: false,
+      toolFilter: false,
+      persona: false,
+    })
   })
 
   it('unregisters the provider when its fiber is disposed (HMR safety)', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(LocalSubprocessRuntime)
     const fiber = await ctx.plugin(acp, { providerName: 'acp', command: 'x', args: [], permission: 'reject', env: {} })

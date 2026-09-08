@@ -18,3 +18,4 @@ None.
 
 - The registry client does not persist cache files or download artifacts; the desktop HUB owns those policies.
 - The independent [Setup library](https://github.com/Iraryi/deepseek-harness-setups) owns GitHub discovery, standalone EXE construction, quarantine, audits, SBOMs, and signing records. Live remote certification refresh remains disabled until the registry itself has authenticated distribution.
+- No invariant companion is published because registry parsing and ranking are pure operations over supplied indexes, with no independent runtime relation.

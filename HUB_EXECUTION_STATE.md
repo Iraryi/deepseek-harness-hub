@@ -371,3 +371,10 @@ Result: complete. The Runtime build, Runtime smoke, isolated installed-directory
 - Installed Setup records retain one valid backup, recover from a damaged primary index, and rebind existing workspaces to the active HUB library root.
 - Focused validation passed standard update retention, standard keep-data uninstall, two portable keep-data uninstall/reinstall cycles with both markers intentionally removed, native HUB snapshot loading, backup recovery, workspace rebinding, and explicit delete-data cleanup.
 - Final Full/Lite Setup and Runtime assets are built under `windows/setup/dist-v0.1.0-rc.7-hotfix.1`, `windows/launcher/dist-v0.1.0-rc.7-hotfix.1`, and `windows/runtime/dist`.
+## DSH Alpha.2 HUB integration checkpoint — 2026-09-08
+
+- The pinned upstream source is `dsh-v0.1.3-alpha.2`, commit `82a5fd61a7cf5c293cec4bdff68f455398d685e9`; the source archive is tracked at `D:\65428\Documents\DeepSeekHarness-upgrade-20260908\deepseek-harness-dsh-v0.1.3-alpha.2.zip` with SHA-256 `44EEA9AA0373E8CD5DD9312F65052F0BA5F64DEFC6FF7212ADD6F5D9EB662445`.
+- The merge branch integrates the upstream tree with the HUB Setup protocol, registry, full-capability pack, Setup HUB client, Web patch roster, first-load index reconciliation, and updated runtime dependency manifest. DSH, HUB, and custom package versions remain separate.
+- The root `tsdown` workspace excludes non-package directories so examples and stale empty paths cannot inherit the package entry; the host and client library build phases complete with the Alpha.2 dependency graph.
+- A proposed bilingual Agent Note records the capability-diff, update-center, data-preserving recovery, resilient Setup, and Web readiness direction in `.agents/notes/proposed/feature/2026-09-08-dsh-alpha2-hub-upgrade-direction.md`.
+- `D:\.MD\EMENGENCY.md` records the Shell Folder pollution incident, recovery snapshots, and the watchdog/`finally` rules. Setup smoke must not be used as a build gate until it runs with isolated data and no host registry mutation.

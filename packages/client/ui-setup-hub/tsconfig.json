@@ -12,11 +12,10 @@
     { "path": "../../setup/protocol" },
     { "path": "../../setup/registry" },
     { "path": "../locale" },
-    { "path": "../runtime" },
+    { "path": "../ui-renderer" },
     { "path": "../ui-layout" },
     { "path": "../ui-primitives" },
     { "path": "../ui-settings" },
-    { "path": "../ui-slots" },
-    { "path": "../../runtime-diagnostics/invariants" }
+    { "path": "../ui-slots" }
   ]
 }

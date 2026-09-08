@@ -9,6 +9,7 @@ export const zh = {
   'status.empty': '无选项',
   'overlay.aria': '/{command} 选项',
   'listbox.aria': '/{command} 匹配项',
+  'notice.attachmentsUnsupported': '/{command} 不接受附件，请先移除附件',
 } satisfies Record<string, string>
 
 /** The command namespace key union. */
@@ -23,4 +24,5 @@ export const en = {
   'status.empty': 'No options',
   'overlay.aria': '/{command} options',
   'listbox.aria': '/{command} matches',
+  'notice.attachmentsUnsupported': '/{command} does not accept attachments; remove them first',
 } satisfies Record<CommandKey, string>

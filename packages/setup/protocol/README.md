@@ -31,3 +31,4 @@ None.
 - Signature-chain verification is performed by the platform-specific installer layer; this package only validates the declared evidence fields. A remote registry therefore needs its own authenticated distribution before its certification claims can be trusted.
 - The package does not execute installers, resolve GitHub releases, or grant permissions.
 - Registry metrics such as stars and installs are kept outside the manifest and are never treated as certification evidence.
+- No invariant companion is published because protocol validation is a pure function over supplied data and has no independent runtime relation.

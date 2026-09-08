@@ -16,7 +16,15 @@ function isBuildFaceClient(value: unknown): boolean {
 export default defineConfig(({ env }) => {
   const client = isBuildFaceClient(env?.DSH_BUILD_FACE)
   return {
-    workspace: ['vendor/*', 'packages/*/*', 'apps/cli'],
+    workspace: [
+      'vendor/*',
+      'packages/*/*',
+      '!packages/examples/*',
+      '!packages/client/runtime',
+      '!packages/host/apiproxy',
+      '!packages/test-support/acp-snapshot',
+      'apps/cli',
+    ],
     entry: client ? '' : ['lib/types/{index,invariant,startup}.js'],
     outDir: 'lib',
     format: ['esm'],

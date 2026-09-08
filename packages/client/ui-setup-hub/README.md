@@ -35,3 +35,4 @@ None.
 - The reviewed Setup catalog remains shipped with the signed Web assets. The larger live community registry is discovery metadata only and cannot assert DSH certification.
 - Download stages expose bounded progress and logs, but exact transferred-byte progress remains deferred for sources that do not report a stable content length.
 - GitHub sign-in currently uses a user-supplied access token. OAuth device flow requires a registered project OAuth App and client ID before it can replace this fallback.
+- No invariant companion is published because the UI renders validated declarations and owns no independent runtime relation to observe.

@@ -1,15 +1,51 @@
+CLAUDE.local.md
+.env
 node_modules/
-.DS_Store
-Thumbs.db
-*.log
-dist/
+lib/
+*.tsbuildinfo
+pnpm-debug.log
+.pnpm-store/
+.cache/
+examples/*/*.jsonl
+.storages/
+.sessions/
+examples/*/.sessions/
+coverage/
+.coverage-times.json
+.doc-typecheck-*/
+.node-next-types-*/
+.oxlint-contract-*/
+.oxlintrc.contract-*.json
+oxlint-contract-*.ts
+.humanize/
 tmp/
-*.user.json
+.claude/commands/
+.claude/launch.json
+.claude/settings.json
+.vscode/
+.DS_Store
+.idea
+mise.toml
+dist-exe/
+python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-*
+python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/
+python/**/__pycache__/
+python/**/.pytest_cache/
+packages/**/__pycache__/
+apps/web/dist/
+.artifacts/
+.dsh-build/
+.playwright-mcp/
+.orig
+.worktrees/
+worktrees/
+.agents/worktrees/
+.typert-*/
 
-# Generated launchers, local WebView2 caches, and build outputs stay outside
-# the public HUB source tree.
+# Generated Windows launchers, WebView2 caches, and deployment outputs.
 /dsh.exe
 /dsh-config.exe
+/dsh-hub.exe
 /Microsoft.Web.WebView2.Core.dll
 /Microsoft.Web.WebView2.WinForms.dll
 /WebView2Loader.dll
@@ -17,4 +53,4 @@ tmp/
 /windows/launcher/cache/
 /windows/launcher/dist*/
 /windows/runtime/dist/
-/windows/setup/dist/
+/windows/setup/dist*/

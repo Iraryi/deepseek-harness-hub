@@ -23,8 +23,9 @@ const manifest = {
 const t = ((key: keyof typeof zh): string => zh[key]) as SetupHubSettingsTabProps['t']
 const runtimeProps = {
   useSessions: () => undefined,
+  useSessionPendingInteraction: () => undefined,
   useWorkspaces: () => undefined,
-} as unknown as Pick<SetupHubSettingsTabProps, 'useSessions' | 'useWorkspaces'>
+} as unknown as Pick<SetupHubSettingsTabProps, 'useSessions' | 'useSessionPendingInteraction' | 'useWorkspaces'>
 
 const emptySnapshot = {
   account: { authenticated: false }, installed: [], library: [], offline: [],

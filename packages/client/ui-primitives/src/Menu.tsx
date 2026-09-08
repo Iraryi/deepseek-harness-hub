@@ -1,13 +1,3 @@
-// Menu: minimal controlled dropdown (group-by pickers, project selectors).
-// Default: pure CSS positioning relative to the anchor wrapper — no popper.
-// Opt-in `portal` renders the list into document.body, fixed-positioned from
-// the anchor rect, for anchors inside overflow-clipping containers (sidebar).
-// The owner controls `open`; outside-click closing uses one document listener
-// active only while open. Submenus open on hover/focus inside the same root.
-// Entries also cover non-interactive `label` headings and `danger` rows.
-// Lists keep 12px clearance to the viewport's top/bottom edges and scroll
-// internally past that; submenu-bearing menus are exempt (see .scrollable).
-
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -85,9 +75,13 @@ const MEASURE_STYLE: CSSProperties = { visibility: 'hidden', left: 0, top: 0 }
  * scroll/resize; return null to skip placement for that frame.
  * @param props.footer - rows pinned below the scrolling items area, separated
  * by a hairline; they stay visible while the items above scroll.
+ * @param props.selection - how a selected row is marked: a trailing check
+ * (`'check'`, default — figma .Menu_cell) or the hover fill held on the row
+ * with no check (`'fill'`, for icon-labelled rows where a trailing glyph
+ * crowds the cell).
  * @returns anchor wrapper with the conditional list.
  */
-export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, getAnchorRect, footer, className }: {
+export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, onClose, align = 'start', side = 'bottom', portal = false, closeOnPointerLeave = false, dense = false, compact = false, selection = 'check', getAnchorRect, footer, className }: {
   open: boolean
   anchor: ReactNode
   items: readonly MenuEntry[]
@@ -102,6 +96,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
   closeOnPointerLeave?: boolean
   dense?: boolean
   compact?: boolean
+  selection?: 'check' | 'fill'
   getAnchorRect?: () => DOMRect | null
   className?: string
 }) {
@@ -219,7 +214,7 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
         <button
           type="button"
           role="menuitem"
-          className={clsx(css.item, selected && css.selected, entry.danger === true && css.danger)}
+          className={clsx(css.item, selected && (selection === 'fill' ? css.selectedFill : css.selected), entry.danger === true && css.danger)}
           disabled={entry.disabled}
           aria-haspopup={hasSub ? 'menu' : undefined}
           aria-expanded={hasSub ? subOpen : undefined}
@@ -234,8 +229,8 @@ export function Menu({ open, anchor, items, selectedId, selectedIds, onSelect, o
         >
           {entry.icon !== undefined && <span className={css.itemIcon}>{entry.icon}</span>}
           <span className={css.itemLabel}>{entry.label}</span>
-          {/* Selection marker is a trailing check (figma .Menu_cell), not a fill. */}
-          {selected && <IconCheckOutline16 className={css.check} />}
+          {/* Selection marker is a trailing check (figma .Menu_cell) unless the fill mode carries it. */}
+          {selected && selection === 'check' && <IconCheckOutline16 className={css.check} />}
         </button>
         {subOpen && entry.submenu !== undefined && (
           <div className={clsx(css.submenu, compact && css.compactList)} role="menu">

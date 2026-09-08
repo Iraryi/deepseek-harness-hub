@@ -5,7 +5,6 @@ import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { foldSurface, Session, SessionId } from '@deepseek-ai/dsh-session'
-import { SessionTelemetryBackend, type SessionTelemetrySharingStatus } from '@deepseek-ai/dsh-session-telemetry'
 import * as commandFeedback from '@deepseek-ai/dsh-command-feedback'
 
 const { USER_ID, getOrCreateAnonymousUserId } = vi.hoisted(() => {
@@ -24,20 +23,6 @@ interface Harness {
   readonly agent: Agent
   readonly session: Session
   readonly plugin: Awaited<ReturnType<Context['plugin']>>
-}
-
-/** Minimal mounted backend disclosing one sharing policy. */
-class FakeTelemetry extends SessionTelemetryBackend {
-  override readonly sharing: SessionTelemetrySharingStatus
-
-  constructor(ctx: Context, config: { sharing: SessionTelemetrySharingStatus }) {
-    super(ctx)
-    this.sharing = config.sharing
-  }
-
-  emit(): void {}
-
-  async shutdown(): Promise<void> {}
 }
 
 /** Build a live idle agent over a store-owned session, as an app's spine does. */
@@ -63,17 +48,11 @@ function stubAgent(ctx: Context, id: string): { agent: Agent; session: Session }
   return { agent, session }
 }
 
-/**
- * Mount the real command registry, this producer, and optionally a telemetry
- * backend disclosing one sharing policy. Without `sharing`, no telemetry
- * service exists and the acknowledgement reports "not configured".
- */
-async function harness(sharing?: SessionTelemetrySharingStatus): Promise<Harness> {
+async function harness(): Promise<Harness> {
   const ctx = new Context()
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SessionStore)
-  if (sharing !== undefined) await ctx.plugin(FakeTelemetry, { sharing })
   const plugin = await ctx.plugin(commandFeedback)
   const { agent, session } = stubAgent(ctx, `command-feedback-${Math.random()}`)
   ctx.agents.register(agent)
@@ -85,6 +64,7 @@ async function run(test: Harness, suffix = ''): Promise<{ kind: string; text?: s
   const settled = await test.ctx.commands.execute(
     test.agent,
     `/feedback${suffix}`,
+    [],
     new AbortController().signal,
   )
   if (settled === undefined) throw new Error('feedback command was not registered')
@@ -93,7 +73,7 @@ async function run(test: Harness, suffix = ''): Promise<{ kind: string; text?: s
 
 /** Authoritative feedback payloads in log order. */
 function feedbackTexts(session: Session): string[] {
-  return session.events
+  return session.snapshotEvents()
     .filter(event => event.type === 'feedback/record')
     .map(event => event.data.text)
 }
@@ -124,18 +104,18 @@ describe('/feedback human command', () => {
     const test = await harness()
     await expect(run(test, ' the diff view is unreadable')).resolves.toEqual({
       kind: 'success',
-      text: `Feedback recorded for session ${test.session.id}\nAnonymous user: ${USER_ID}. Session sharing is not configured.`,
+      text: `Feedback recorded for session ${test.session.id}\nAnonymous user: ${USER_ID}.`,
     })
     expect(feedbackTexts(test.session)).toEqual(['the diff view is unreadable'])
-    const commandRun = test.session.events.find(event => event.type === 'command/run')
+    const commandRun = test.session.snapshotEvents().find(event => event.type === 'command/run')
     expect(commandRun?.type === 'command/run' && Object.hasOwn(commandRun.data, 'args')).toBe(false)
-    expect(JSON.stringify(test.session.events).match(/the diff view is unreadable/gu)).toHaveLength(1)
+    expect(JSON.stringify(test.session.snapshotEvents()).match(/the diff view is unreadable/gu)).toHaveLength(1)
   })
 
   it('exports a command-independent feedback producer', async () => {
     const test = await harness()
     commandFeedback.recordFeedback(test.session, '  recorded outside a command  ')
-    expect(test.session.events.map(event => event.type)).toEqual(['feedback/record'])
+    expect(test.session.snapshotEvents().map(event => event.type)).toEqual(['feedback/record'])
     expect(feedbackTexts(test.session)).toEqual(['recorded outside a command'])
     expect(() => { commandFeedback.recordFeedback(test.session, ' \n\t ') })
       .toThrow('feedback text must not be empty')
@@ -145,7 +125,7 @@ describe('/feedback human command', () => {
   it('keeps command bookkeeping around the authoritative feedback event', async () => {
     const test = await harness()
     await run(test, ' nothing else happens')
-    expect(test.session.events.map(event => event.type)).toEqual([
+    expect(test.session.snapshotEvents().map(event => event.type)).toEqual([
       'command/run', 'feedback/record', 'command/done',
     ])
   })
@@ -168,51 +148,24 @@ describe('/feedback human command', () => {
     const signal = new AbortController().signal
     // Command adapters may dispatch concurrent requests without awaiting one another.
     const settled = await Promise.all([
-      test.ctx.commands.execute(test.agent, '/feedback first', signal),
-      test.ctx.commands.execute(test.agent, '/feedback second', signal),
+      test.ctx.commands.execute(test.agent, '/feedback first', [], signal),
+      test.ctx.commands.execute(test.agent, '/feedback second', [], signal),
     ])
     expect(settled.map(item => item?.result)).toEqual([
-      { kind: 'success', text: `Feedback recorded for session ${test.session.id}\nAnonymous user: ${USER_ID}. Session sharing is not configured.` },
-      { kind: 'success', text: `Feedback recorded for session ${test.session.id}\nAnonymous user: ${USER_ID}. Session sharing is not configured.` },
+      { kind: 'success', text: `Feedback recorded for session ${test.session.id}\nAnonymous user: ${USER_ID}.` },
+      { kind: 'success', text: `Feedback recorded for session ${test.session.id}\nAnonymous user: ${USER_ID}.` },
     ])
     expect(feedbackTexts(test.session)).toEqual(['first', 'second'])
-  })
-
-  it('discloses full session sharing in the acknowledgement', async () => {
-    const test = await harness('full')
-    await expect(run(test, ' everything shared')).resolves.toEqual({
-      kind: 'success',
-      text: `Feedback recorded for session ${test.session.id}\nAnonymous user: ${USER_ID}. Session sharing is enabled.`,
-    })
-    expect(feedbackTexts(test.session)).toEqual(['everything shared'])
-  })
-
-  it('discloses feedback-gated session sharing in the acknowledgement', async () => {
-    const test = await harness('feedback-only')
-    await expect(run(test, ' gated sharing')).resolves.toEqual({
-      kind: 'success',
-      text: `Feedback recorded for session ${test.session.id}\nAnonymous user: ${USER_ID}. Session sharing is feedback-gated; recording feedback releases the session prefix for sharing.`,
-    })
-    expect(feedbackTexts(test.session)).toEqual(['gated sharing'])
-  })
-
-  it('discloses disabled session sharing in the acknowledgement', async () => {
-    const test = await harness('disabled')
-    await expect(run(test, ' local only')).resolves.toEqual({
-      kind: 'success',
-      text: `Feedback recorded for session ${test.session.id}\nAnonymous user: ${USER_ID}. Session sharing is disabled.`,
-    })
-    expect(feedbackTexts(test.session)).toEqual(['local only'])
   })
 
   it('keeps every recorded event out of model context and derived history', async () => {
     const test = await harness()
     await run(test, ' invisible to the model')
-    for (const event of test.session.events) {
+    for (const event of test.session.snapshotEvents()) {
       expect('surfaceOp' in event).toBe(false)
       expect(test.session.deriveEventMessage(event)).toBeNull()
     }
-    expect(foldSurface(test.session.events).nodes).toEqual([])
+    expect(foldSurface(test.session.snapshotEvents()).nodes).toEqual([])
     expect(test.session.surface.nodes).toEqual([])
     expect(test.session.deriveMessages()).toEqual([])
   })
@@ -227,9 +180,9 @@ describe('/feedback human command', () => {
     await expect(run(test, '   \n\t ')).resolves.toEqual(expected)
     expect(getOrCreateAnonymousUserId).not.toHaveBeenCalled()
     expect(feedbackTexts(test.session)).toEqual([])
-    const done = test.session.events.filter(event => event.type === 'command/done')
+    const done = test.session.snapshotEvents().filter(event => event.type === 'command/done')
     expect(done.map(event => event.data.kind)).toEqual(['error', 'error'])
-    for (const event of test.session.events) {
+    for (const event of test.session.snapshotEvents()) {
       if (event.type === 'command/run') expect(Object.hasOwn(event.data, 'args')).toBe(false)
     }
   })
@@ -238,8 +191,8 @@ describe('/feedback human command', () => {
     const test = await harness()
     const controller = new AbortController()
     controller.abort(new Error('user cancelled the command'))
-    await expect(test.ctx.commands.execute(test.agent, '/feedback too late', controller.signal))
+    await expect(test.ctx.commands.execute(test.agent, '/feedback too late', [], controller.signal))
       .rejects.toThrow('user cancelled the command')
-    expect(test.session.events).toEqual([])
+    expect(test.session.snapshotEvents()).toEqual([])
   })
 })
