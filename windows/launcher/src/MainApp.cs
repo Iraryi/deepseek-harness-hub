@@ -852,6 +852,7 @@ internal sealed class MainForm : Form
     private DateTime _webUiBootLastActivityUtc;
     private string _webUiBootStage;
     private string _activeUrl;
+    private string _authenticatedUrl;
     private string _navigationUrl;
     private string _desktopBootId;
     private ulong _activeNavigationId;
@@ -902,6 +903,7 @@ internal sealed class MainForm : Form
         _reloadActivationEvent = reloadActivationEvent;
         _activePort = _cfg.Port;
         _activeUrl = _cfg.Url;
+        _authenticatedUrl = null;
         _navigationUrl = BuildNavigationUrl(_activeUrl, _hubMode, _hubConfig, out _desktopBootId);
         if (!TryParseHotkey(_cfg.ToolbarHotkey, out _toolbarKey, out _toolbarMods)) { _toolbarKey = Keys.F8; _toolbarMods = Keys.None; }
         if (!TryParseHotkey(_cfg.FullscreenHotkey, out _fullscreenKey, out _fullscreenMods)) { _fullscreenKey = Keys.F11; _fullscreenMods = Keys.None; }
@@ -1997,7 +1999,7 @@ internal sealed class MainForm : Form
             _webUiVerified = false;
             _webUiBootTerminal = false;
             _activeNavigationId = 0;
-            _navigationUrl = BuildNavigationUrl(_activeUrl, _hubMode, _hubConfig, out _desktopBootId);
+            _navigationUrl = BuildNavigationUrl(_authenticatedUrl ?? _activeUrl, _hubMode, _hubConfig, out _desktopBootId);
             _webUiBootStartedUtc = DateTime.UtcNow;
             _webUiBootLastActivityUtc = _webUiBootStartedUtc;
             _webUiBootStage = "retry navigation queued";
@@ -5593,6 +5595,7 @@ internal sealed class MainForm : Form
         _activeNavigationId = 0;
         _activePort = _cfg.Port;
         _activeUrl = _cfg.Url;
+        _authenticatedUrl = null;
         if (_hubMode)
         {
             _activePort = FindAvailableLoopbackPort();
@@ -5665,6 +5668,7 @@ internal sealed class MainForm : Form
             arguments.Append(Quote("--import")).Append(" ").Append(Quote("tsx/esm")).Append(" ");
         }
         arguments.Append(Quote(bin)).Append(" ").Append(Quote("web"));
+        arguments.Append(" ").Append(Quote("--no-open"));
         string desktopPatch = EnsureDesktopWebPatch();
         if (string.IsNullOrEmpty(desktopPatch))
         {
@@ -5929,7 +5933,7 @@ internal sealed class MainForm : Form
             _webUiServiceRecoveryCount = 0;
             _preserveWebUiServiceRecoveryCount = false;
             _activeNavigationId = 0;
-            _navigationUrl = BuildNavigationUrl(_activeUrl, _hubMode, _hubConfig, out _desktopBootId);
+            _navigationUrl = BuildNavigationUrl(_authenticatedUrl ?? _activeUrl, _hubMode, _hubConfig, out _desktopBootId);
             _webView.CoreWebView2.Navigate(_navigationUrl);
         }
         else
@@ -6050,7 +6054,7 @@ internal sealed class MainForm : Form
         }
         try
         {
-            ProcessStartInfo psi = new ProcessStartInfo(_activeUrl);
+            ProcessStartInfo psi = new ProcessStartInfo(_authenticatedUrl ?? _activeUrl);
             psi.UseShellExecute = true;
             Process.Start(psi);
         }
@@ -6289,6 +6293,8 @@ internal sealed class MainForm : Form
             BeginInvoke((MethodInvoker)delegate
             {
                 if (_serviceReady || _proc == null || _proc.HasExited || reported.Port != _activePort) return;
+                _authenticatedUrl = reportedUrl;
+                _navigationUrl = BuildNavigationUrl(_authenticatedUrl, _hubMode, _hubConfig, _desktopBootId);
                 _serviceReady = true;
                 ReleaseServiceStartGate();
                 SetLoadingStage("Connecting to Web UI", 74F);
@@ -6443,6 +6449,11 @@ internal sealed class MainForm : Form
     private static string BuildNavigationUrl(string serviceUrl, bool hubMode, HubConfig hubConfig, out string bootId)
     {
         bootId = Guid.NewGuid().ToString("N");
+        return BuildNavigationUrl(serviceUrl, hubMode, hubConfig, bootId);
+    }
+
+    private static string BuildNavigationUrl(string serviceUrl, bool hubMode, HubConfig hubConfig, string bootId)
+    {
         string hubToken = "";
         if (hubMode)
         {

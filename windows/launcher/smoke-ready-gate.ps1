@@ -77,6 +77,7 @@ const mark = (name) => fs.writeFileSync(path.join(root, name), String(Date.now()
 const readCount = (name) => {
   try { return Number(fs.readFileSync(path.join(root, name), 'utf8')) || 0 } catch { return 0 }
 }
+fs.writeFileSync(path.join(root, 'no-open.txt'), String(process.argv.includes('--no-open')))
 const serviceStartCount = readCount('service-start-count.txt') + 1
 fs.writeFileSync(path.join(root, 'service-start-count.txt'), String(serviceStartCount))
 let navigationCount = 0
@@ -91,6 +92,7 @@ const server = http.createServer((request, response) => {
   navigationCount += 1
   const totalNavigationCount = readCount('navigation-count.txt') + 1
   const bootId = requestUrl.searchParams.get('desktopBoot') || ''
+  fs.writeFileSync(path.join(root, 'startup-token.txt'), requestUrl.searchParams.get('token') || '')
   fs.writeFileSync(path.join(root, 'surface.txt'), requestUrl.searchParams.get('dshSurface') || '')
   if (totalNavigationCount === 1) {
     firstBootId = bootId
@@ -126,7 +128,7 @@ server.listen(port, '127.0.0.1', () => {
   mark('port-open.txt')
   setTimeout(() => {
     mark('ready-announced.txt')
-    console.log(`dsh web: http://127.0.0.1:${port}`)
+    console.log(`dsh web: http://127.0.0.1:${port}/?token=ready-gate-token`)
   }, 3000)
 })
 
@@ -177,6 +179,12 @@ process.on('SIGTERM', close)
     $announcedAt = [long](Get-Content -LiteralPath (Join-Path $work 'ready-announced.txt') -Raw)
     $requestedAt = [long](Get-Content -LiteralPath (Join-Path $work 'page-requested.txt') -Raw)
     if ($requestedAt -lt $announcedAt) { throw 'Page request preceded the ready announcement' }
+    if ((Get-Content -LiteralPath (Join-Path $work 'no-open.txt') -Raw).Trim() -ne 'True') {
+        throw 'Launcher did not suppress the default browser handoff'
+    }
+    if ((Get-Content -LiteralPath (Join-Path $work 'startup-token.txt') -Raw).Trim() -ne 'ready-gate-token') {
+        throw 'Launcher did not navigate with the authenticated startup URL'
+    }
 
     $logPath = Join-Path $data 'logs\app.log'
     $readyTimeout = if ($ExpectServiceRecovery) { 60 } else { 20 }
