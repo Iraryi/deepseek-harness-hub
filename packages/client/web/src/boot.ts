@@ -18,6 +18,12 @@ import './base.css'
 /** Module transport hook replaced by jsdom tests. */
 export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'>
 
+interface ClientEntryFailure {
+  name: string
+  state: string
+  missingServices: string[]
+}
+
 /** Browser boot entry consumed by `apps/web`. */
 export class AppWebEntry {
   private readonly container: HTMLElement
@@ -26,6 +32,9 @@ export class AppWebEntry {
   private ctx: Context | undefined
   private modules!: ClientModuleSystem
   private manifest!: BootManifest
+  private readonly desktopBootId = new URLSearchParams(globalThis.location?.search ?? '').get('desktopBoot')
+  private booting = false
+  private failures: ClientEntryFailure[] = []
 
   /**
    * Draw the boot page; {@link run} starts the loader.
@@ -44,6 +53,8 @@ export class AppWebEntry {
    * @returns Resolves after application mount or failure rendering.
    */
   async run(): Promise<void> {
+    this.booting = true
+    this.reportDesktopBoot('loading', 'Preparing client modules')
     try {
       // Boot-readiness gate: whichever bootstrap applies the injection table
       // settles this deferred once every row has taken effect — the served
@@ -74,13 +85,39 @@ export class AppWebEntry {
       this.manifest = this.modules.manifest
 
       const prefetching = this.prefetchImmediateTier()
+      this.reportDesktopBoot('loading', 'Loading client plugins')
       const ctx = new Context()
       this.ctx = ctx
       await this.runPluginBoot(ctx, prefetching)
       await this.mountApp(ctx)
+      this.reportDesktopBoot('ready', 'Interface ready')
     } catch (reason) {
       console.error(reason)
-      this.page.fail(reason instanceof Error ? reason.message : String(reason))
+      const message = reason instanceof Error ? reason.message : String(reason)
+      this.page.fail(message)
+      this.reportDesktopBoot('failed', message)
+    } finally {
+      this.booting = false
+    }
+  }
+
+  private reportDesktopBoot(state: 'loading' | 'ready' | 'failed', message: string): void {
+    const bootId = this.desktopBootId
+    if (bootId === null || !/^[0-9a-f]{32}$/u.test(bootId)) return
+    const target = globalThis as typeof globalThis & {
+      chrome?: { webview?: { postMessage(message: unknown): void } }
+      __DSH_DESKTOP_BOOT_STATUS__?: unknown
+    }
+    const failures = state === 'failed' ? this.failures : []
+    const report = {
+      type: 'dsh-web-boot-status', bootId, state, message, failures,
+      retryable: failures.length > 0 && failures.every(failure => failure.state === 'pending'),
+    }
+    target.__DSH_DESKTOP_BOOT_STATUS__ = report
+    try {
+      target.chrome?.webview?.postMessage(report)
+    } catch (reason) {
+      console.warn('Desktop boot status could not be delivered', reason)
     }
   }
 
@@ -119,6 +156,7 @@ export class AppWebEntry {
       const entry = fiber.entry
       if (entry === undefined || entry.fiber === undefined) return
       this.page.setState(entry.options.name, STATE_LABELS[entry.fiber.state])
+      if (this.booting) this.reportDesktopBoot('loading', `Activating ${entry.options.name}`)
     })
 
     const rows = this.manifest.plugins.map(row => row.id)
@@ -126,7 +164,10 @@ export class AppWebEntry {
     await prefetching
     await Promise.all(rows.map(async (name) => {
       this.page.setState(name, 'loading')
-      const id = await loader.create({ name })
+      const id = await loader.create({ name }).catch((reason: unknown) => {
+        this.failures.push({ name, state: 'import-failed', missingServices: [] })
+        throw reason
+      })
       if (loader.resolve(id).fiber === undefined) this.page.setState(name, 'failed')
     }))
 
@@ -136,17 +177,23 @@ export class AppWebEntry {
 
   /** Reject entries that failed import/apply or still wait on missing services. */
   private assertEntriesActive(ctx: Context): void {
+    this.failures = []
     const failures: string[] = []
     for (const entry of ctx.loader.entries()) {
       const name = entry.options.name
       if (entry.fiber === undefined) {
+        this.failures.push({ name, state: 'import-failed', missingServices: [] })
         failures.push(`${name}: import failed (see console for the import error)`)
         continue
       }
       const state = STATE_LABELS[entry.fiber.state]
       if (state === 'active') continue
+      const missingServices = state === 'pending'
+        ? Object.keys(entry.fiber.inject).filter(service => ctx.get(service) === undefined)
+        : []
+      this.failures.push({ name, state, missingServices })
       if (state === 'pending') {
-        const missing = Object.keys(entry.fiber.inject).filter(service => ctx.get(service) === undefined)
+        const missing = missingServices
         failures.push(`${name}: pending (waiting for service${missing.length === 1 ? '' : 's'}: ${missing.join(', ') || 'unknown'})`)
       } else {
         failures.push(`${name}: ${state}`)

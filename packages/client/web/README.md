@@ -7,6 +7,8 @@ kind: "package-library"
 
 English | [中文](README.zh.md)
 
+In WebView2, a valid `desktopBoot` query value identifies the current native navigation. The boot kernel reports loading progress, entry failures with missing services, and readiness after application mount using `dsh-web-boot-status`. Ordinary browser visits need no native bridge. See the [Desktop startup integration note](../../../.agents/notes/implemented/bug-fix/2026-09-12-packaged-desktop-startup.md).
+
 ## Summary
 
 `dsh-client-web` boots the web GUI: it loads the client module system from the Host-provided boot graph, then activates every client plugin before the application mounts, so the full UI appears only when every plugin is up. A framework-free boot page reports per-entry status, so a failing bundle or plugin stays visible instead of a blank screen. It also defines the shared module table (`PLATFORM_MODULES`) that every dynamic bundle resolves its externals against. The model never sees this package.

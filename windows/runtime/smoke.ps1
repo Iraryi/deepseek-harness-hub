@@ -161,7 +161,7 @@ try {
     }
 
     $process = Start-Process $node `
-        -ArgumentList @('--import', $resolverUrl, $entry, 'web', '--patch', $patch, '--port', $port) `
+        -ArgumentList @('--import', $resolverUrl, $entry, 'web', '--patch', $patch, '--no-open', '--port', $port) `
         -WorkingDirectory $extractPath `
         -WindowStyle Hidden `
         -RedirectStandardOutput $stdout `
@@ -169,12 +169,18 @@ try {
         -PassThru
 
     $response = $null
+    $authenticatedUrl = $null
     for ($attempt = 0; $attempt -lt 180; $attempt++) {
         Start-Sleep -Milliseconds 500
         $process.Refresh()
         if ($process.HasExited) { break }
+        $output = Get-Content -LiteralPath $stdout -Raw -ErrorAction SilentlyContinue
+        if ($output -match 'dsh web: (http://127\.0\.0\.1:\d+/\?token=\S+)') {
+            $authenticatedUrl = $Matches[1]
+        }
+        if ($null -eq $authenticatedUrl) { continue }
         try {
-            $response = Invoke-WebRequest "http://127.0.0.1:$port" -UseBasicParsing -TimeoutSec 2
+            $response = Invoke-WebRequest $authenticatedUrl -UseBasicParsing -TimeoutSec 2
             if ($response.StatusCode -eq 200) {
                 $ready = $true
                 break

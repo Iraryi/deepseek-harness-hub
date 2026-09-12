@@ -2,6 +2,15 @@
 
 This file is the mandatory operational ledger for work governed by [HUB_REQUIREMENTS.md](HUB_REQUIREMENTS.md). It does not replace that requirements file or relax any acceptance criterion. Every agent must read both files before touching the affected surfaces, update this ledger when a checkpoint changes, and verify claims from commands or artifacts instead of relying on conversation memory.
 
+## Active clean-install startup correction — 2026-09-12
+
+- User reports failure on a different computer after a fresh installation; the maintainer's installed logs are not evidence of that failure.
+- Reproduced with the released Alpha.2 Runtime, an empty DSH_HOME, a system-only PATH, and cleared development/credential environment: `web --no-open --patch ... --port ...` exits 1 with `error: unknown option '--patch'`. Putting `--patch` before app arguments keeps the service running and prints its authenticated URL. The hub.3 mock ready-gate test accepted invalid CLI order and did not catch this regression.
+- Work sequence: fix argument order; add a readable localized failure page with retry/config/diagnostics actions; validate actual packaged Desktop and HUB with fresh data and authenticated WebView readiness; correct release checksum generation; compile and verify a new update package.
+- Test evidence belongs under `D:\65428\Documents\DeepSeekHarness-upgrade-20260908\diagnostics-20260912`. Use explicit per-process data paths and instance scope. Never mutate host Shell Folders or run the legacy Setup smoke script. Preserve all real user data.
+- Only publish after the real Runtime/native startup checks pass; record outstanding limitations instead of treating mock success as a clean-machine pass.
+- The real EXE/Runtime test also reproduced a rendered page stuck behind the splash: BrowserAuth redirects to `/` and discards `desktopBoot`/`dshSurface`, while the upstream `AppWebEntry` refactor omitted the native structured boot reports. Restore both at their actual owners and require native structured readiness before claiming success.
+
 ## Standing execution rules
 
 - Continue autonomously through implementation, self-review, focused tests, production builds, native smoke tests, visual inspection, and installed-path validation when the product owner is away.

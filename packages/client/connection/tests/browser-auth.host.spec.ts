@@ -91,6 +91,26 @@ afterEach(() => {
 })
 
 describe('BrowserAuth', () => {
+  it('keeps desktop routing through login and stale-token redirects without exposing tokens', async () => {
+    const auth = await createAuth(new RecordCredentials())
+    const target = new URL(auth.authenticatedUrl('http://127.0.0.1:3080'))
+    target.searchParams.set('desktopBoot', 'a'.repeat(32))
+    target.searchParams.set('dshSurface', 'hub')
+    target.searchParams.set('dshHubTheme', 'dark')
+    const login = response()
+    expect(auth.authorizeIndex(request(`${target.pathname}${target.search}`), login.value)).toBe(false)
+    const expected = `/?desktopBoot=${'a'.repeat(32)}&dshSurface=hub&dshHubTheme=dark`
+    expect(login.state.headers?.location).toBe(expected)
+    const cookie = login.state.headers?.['set-cookie']?.split(';', 1)[0]
+    if (cookie === undefined) throw new Error('token exchange did not set a cookie')
+    const page = response()
+    expect(auth.authorizeIndex(request(expected, '127.0.0.1:3080', { cookie }), page.value)).toBe(true)
+    const stale = response()
+    expect(auth.authorizeIndex(request(`${expected}&token=old&token=duplicate`, '127.0.0.1:3080', { cookie }), stale.value)).toBe(false)
+    expect(stale.state.headers?.location).toBe(expected)
+    expect(stale.state.headers?.location).not.toContain('token=')
+  })
+
   it('mints one process token and a persistent authority-bound cookie', async () => {
     const store = new RecordCredentials()
     const processOwner = {}

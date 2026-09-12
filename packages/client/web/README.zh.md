@@ -7,6 +7,8 @@ kind: "package-library"
 
 [English](README.md) | 中文
 
+在 WebView2 中，有效的 `desktopBoot` 查询值标识当前原生导航。启动内核通过 `dsh-web-boot-status` 报告加载进度、包含缺失服务的条目失败信息，以及应用挂载后的就绪状态。普通浏览器访问不需要原生桥接。参见[桌面启动集成记录](../../../.agents/notes/implemented/bug-fix/2026-09-12-packaged-desktop-startup.zh.md)。
+
 ## 概述
 
 `dsh-client-web` 启动 web GUI：它先从 Host 提供的启动图加载客户端模块系统，再在应用挂载前激活每一个客户端插件，因此只有当所有插件都就绪时完整 UI 才会出现。无框架启动页会逐 entry 报告状态，因此失败的 bundle 或插件保持可见，而不是白屏。它还定义共享模块表（`PLATFORM_MODULES`），每个动态 bundle 都依据它解析 external。模型永远看不到本包。

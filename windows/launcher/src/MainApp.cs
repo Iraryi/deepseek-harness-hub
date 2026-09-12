@@ -244,10 +244,18 @@ internal sealed class LoadingOverlay : Control
     private bool _error;
     private bool _dismissed;
     private int _completeTicks;
+    private readonly TableLayoutPanel _failurePanel;
+    private readonly Label _failureSummary;
+    private readonly TextBox _failureDetails;
+    private readonly bool _chinese;
 
     public event EventHandler Dismissed;
+    public event EventHandler RetryRequested;
+    public event EventHandler ConfigRequested;
+    public event EventHandler LogRequested;
+    public Func<string> DiagnosticText;
 
-    public LoadingOverlay(string style, string productName)
+    public LoadingOverlay(string style, string productName, string language)
     {
         _style = style;
         _productName = string.IsNullOrEmpty(productName) ? "DSH" : productName;
@@ -258,6 +266,80 @@ internal sealed class LoadingOverlay : Control
         BackColor = Color.FromArgb(8, 22, 52);
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
             ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+
+        _chinese = language == "zh-CN";
+        _failurePanel = new TableLayoutPanel();
+        _failurePanel.ColumnCount = 1;
+        _failurePanel.RowCount = 4;
+        _failurePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        _failurePanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _failurePanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _failurePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        _failurePanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _failurePanel.BackColor = BackColor;
+        _failurePanel.Visible = false;
+        Controls.Add(_failurePanel);
+
+        Label failureTitle = new Label();
+        failureTitle.Text = _productName + (_chinese ? " 启动失败" : " could not start");
+        failureTitle.AutoSize = true;
+        failureTitle.Dock = DockStyle.Fill;
+        failureTitle.ForeColor = Color.FromArgb(244, 250, 255);
+        failureTitle.Font = new Font("Microsoft YaHei UI", 19F, FontStyle.Bold);
+        failureTitle.Margin = new Padding(0, 0, 0, 12);
+        _failurePanel.Controls.Add(failureTitle, 0, 0);
+
+        _failureSummary = new Label();
+        _failureSummary.AutoSize = true;
+        _failureSummary.Dock = DockStyle.Fill;
+        _failureSummary.ForeColor = Color.FromArgb(255, 191, 191);
+        _failureSummary.Font = new Font("Microsoft YaHei UI", 10F);
+        _failureSummary.Margin = new Padding(0, 0, 0, 16);
+        _failurePanel.Controls.Add(_failureSummary, 0, 1);
+
+        _failureDetails = new TextBox();
+        _failureDetails.AccessibleName = "Startup diagnostics";
+        _failureDetails.Multiline = true;
+        _failureDetails.ReadOnly = true;
+        _failureDetails.WordWrap = true;
+        _failureDetails.ScrollBars = ScrollBars.Vertical;
+        _failureDetails.Dock = DockStyle.Fill;
+        _failureDetails.BorderStyle = BorderStyle.None;
+        _failureDetails.BackColor = BackColor;
+        _failureDetails.ForeColor = Color.FromArgb(196, 216, 234);
+        _failureDetails.Font = new Font("Microsoft YaHei UI", 9F);
+        _failureDetails.Margin = new Padding(0, 0, 0, 20);
+        _failurePanel.Controls.Add(_failureDetails, 0, 2);
+
+        FlowLayoutPanel actions = new FlowLayoutPanel();
+        actions.AutoSize = true;
+        actions.Dock = DockStyle.Fill;
+        actions.Margin = Padding.Empty;
+        _failurePanel.Controls.Add(actions, 0, 3);
+        AddFailureAction(actions, _chinese ? "重试启动" : "Retry startup", "Retry startup", delegate {
+            EventHandler handler = RetryRequested;
+            if (handler != null) handler(this, EventArgs.Empty);
+        });
+        AddFailureAction(actions, _chinese ? "打开 CONFIG" : "Open CONFIG", "Open CONFIG", delegate {
+            EventHandler handler = ConfigRequested;
+            if (handler != null) handler(this, EventArgs.Empty);
+        });
+        AddFailureAction(actions, _chinese ? "查看日志" : "Open log", "Open log", delegate {
+            EventHandler handler = LogRequested;
+            if (handler != null) handler(this, EventArgs.Empty);
+        });
+        AddFailureAction(actions, _chinese ? "复制诊断" : "Copy diagnostics", "Copy diagnostics", delegate(object sender, EventArgs args) {
+            Button button = (Button)sender;
+            try
+            {
+                Clipboard.SetText(DiagnosticText == null ? _failureDetails.Text : DiagnosticText());
+                button.Text = _chinese ? "已复制" : "Copied";
+            }
+            catch (ExternalException)
+            {
+                button.Text = _chinese ? "剪贴板忙，请重试" : "Clipboard busy; retry";
+            }
+        });
 
         _timer = new System.Windows.Forms.Timer();
         _timer.Interval = 33;
@@ -290,9 +372,50 @@ internal sealed class LoadingOverlay : Control
         if (Visible) _timer.Start();
     }
 
+    private void AddFailureAction(FlowLayoutPanel actions, string text, string accessibleName, EventHandler clicked)
+    {
+        Button button = new Button();
+        button.Text = text;
+        button.AccessibleName = accessibleName;
+        button.AutoSize = true;
+        button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        button.Padding = new Padding(14, 9, 14, 9);
+        button.Margin = new Padding(0, 0, 12, 8);
+        button.Font = new Font("Microsoft YaHei UI", 10F);
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderColor = Color.FromArgb(77, 113, 153);
+        button.BackColor = Color.FromArgb(25, 49, 79);
+        button.ForeColor = Color.FromArgb(244, 250, 255);
+        button.Click += clicked;
+        actions.Controls.Add(button);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (_failurePanel == null) return;
+        float scale = DeviceDpi / 96F;
+        int width = Math.Min((int)(760 * scale), Math.Max(1, ClientSize.Width - (int)(48 * scale)));
+        int height = Math.Min((int)(420 * scale), Math.Max(1, ClientSize.Height - (int)(48 * scale)));
+        _failurePanel.SetBounds((ClientSize.Width - width) / 2, (ClientSize.Height - height) / 2, width, height);
+    }
+
+    public void Reset()
+    {
+        _failurePanel.Visible = false;
+        _dismissed = false;
+        _error = false;
+        _completing = false;
+        _completeTicks = 0;
+        _progress = 4F;
+        _targetProgress = 8F;
+        Visible = _style != "off";
+        if (Visible) { BringToFront(); _timer.Start(); }
+    }
+
     public void SetStage(string stage, float progress)
     {
-        if (_style == "off" || _dismissed) return;
+        if (_style == "off" || _dismissed || _error) return;
         if (InvokeRequired)
         {
             BeginInvoke((MethodInvoker)delegate { SetStage(stage, progress); });
@@ -327,7 +450,6 @@ internal sealed class LoadingOverlay : Control
 
     public void ShowError(string stage)
     {
-        if (_style == "off") return;
         if (InvokeRequired)
         {
             BeginInvoke((MethodInvoker)delegate { ShowError(stage); });
@@ -338,13 +460,41 @@ internal sealed class LoadingOverlay : Control
         _progress = _targetProgress;
         _completing = false;
         _error = true;
+        _dismissed = false;
         _timer.Stop();
+        _failureSummary.Text = LocalizeFailure(_stage);
+        _failureDetails.Text = DiagnosticText == null ? _stage : DiagnosticText();
+        _failureDetails.SelectionStart = _failureDetails.TextLength;
+        _failureDetails.ScrollToCaret();
+        _failurePanel.Visible = true;
+        Visible = true;
+        BringToFront();
+        OnResize(EventArgs.Empty);
         Invalidate();
+    }
+
+    private string LocalizeFailure(string stage)
+    {
+        if (!_chinese) return stage;
+        if (stage.StartsWith("Local service exited (code ", StringComparison.Ordinal))
+            return "本地服务未能启动（退出码 " + Regex.Match(stage, @"code (-?\d+)").Groups[1].Value + "）。具体原因见下方日志。";
+        switch (stage)
+        {
+            case "Web interface did not respond": return "网页未能响应。请查看诊断信息后重试。";
+            case "Browser engine initialization failed":
+            case "Embedded browser could not start": return "内置浏览器启动失败。请查看下方诊断信息。";
+            case "Local service startup timed out": return "本地服务启动超时。请查看下方诊断信息。";
+            case "Plugin startup verification timed out": return "插件启动验证超时。可以重试启动或打开 CONFIG。";
+            case "Plugin startup failed — open the toolbar log": return "插件启动失败。请查看下方诊断信息。";
+            case "Startup failed — open Config or the toolbar log": return "启动未能完成。可以重试或打开 CONFIG 检查配置。";
+            default: return stage;
+        }
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
+        if (_error) { e.Graphics.Clear(BackColor); return; }
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         if (_style == "progress") DrawProgressLoader(e.Graphics);
@@ -1042,8 +1192,20 @@ internal sealed class MainForm : Form
 
         SetupTrayIcon();
 
-        _loadingOverlay = new LoadingOverlay(_loadingStyle, ProductDisplayName);
+        _loadingOverlay = new LoadingOverlay(_loadingStyle, ProductDisplayName, _cfg.Language);
         _loadingOverlay.Dismissed += delegate { RevealInterface(); };
+        _loadingOverlay.DiagnosticText = BuildStartupDiagnostics;
+        _loadingOverlay.RetryRequested += delegate {
+            if (_restartInProgress || _serviceStartWaiting) return;
+            if (!_coreReady) InitWebView();
+            _loadingOverlay.Reset();
+            RestartHostedService("Startup retry requested by user", "Restarting");
+        };
+        _loadingOverlay.ConfigRequested += delegate { OpenConfigApp(); };
+        _loadingOverlay.LogRequested += delegate {
+            if (!_logPanel.Visible) ToggleLog();
+            _logPanel.BringToFront();
+        };
         Controls.Add(_loadingOverlay);
         if (_loadingOverlay.Visible) _loadingOverlay.BringToFront();
 
@@ -5581,6 +5743,7 @@ internal sealed class MainForm : Form
             return;
         }
 
+        if (_loadingOverlay != null) _loadingOverlay.Reset();
         SetLoadingStage("Starting local service", 20F);
         bool preserveRecoveryCount = _preserveWebUiServiceRecoveryCount;
         _preserveWebUiServiceRecoveryCount = false;
@@ -5668,7 +5831,6 @@ internal sealed class MainForm : Form
             arguments.Append(Quote("--import")).Append(" ").Append(Quote("tsx/esm")).Append(" ");
         }
         arguments.Append(Quote(bin)).Append(" ").Append(Quote("web"));
-        arguments.Append(" ").Append(Quote("--no-open"));
         string desktopPatch = EnsureDesktopWebPatch();
         if (string.IsNullOrEmpty(desktopPatch))
         {
@@ -5676,6 +5838,7 @@ internal sealed class MainForm : Form
             return;
         }
         arguments.Append(" ").Append(Quote("--patch")).Append(" ").Append(Quote(desktopPatch));
+        arguments.Append(" ").Append(Quote("--no-open"));
         arguments.Append(" ").Append(Quote("--port")).Append(" ").Append(_activePort.ToString());
         psi.Arguments = arguments.ToString();
         psi.WorkingDirectory = repo;
@@ -5712,14 +5875,18 @@ internal sealed class MainForm : Form
         serverProcess.ErrorDataReceived += delegate(object s, DataReceivedEventArgs e) { OnOutput(e.Data); };
         serverProcess.Exited += delegate
         {
+            ThreadPool.QueueUserWorkItem(delegate
+            {
             try
             {
+                serverProcess.WaitForExit();
+                int exitCode = serverProcess.ExitCode;
                 BeginInvoke((MethodInvoker)delegate
                 {
                     if (_shuttingDown || !ReferenceEquals(_proc, serverProcess)) return;
-                    int exitCode = serverProcess.ExitCode;
                     _proc = null;
                     _serviceReady = false;
+                    _webUiBootTerminal = true;
                     ReleaseServiceStartGate();
                     SetStatus("Stopped", Color.FromArgb(150, 60, 60));
                     AppendLog("Server process exited, code " + exitCode);
@@ -5733,6 +5900,7 @@ internal sealed class MainForm : Form
             catch
             {
             }
+            });
         };
         try
         {
@@ -6311,6 +6479,7 @@ internal sealed class MainForm : Form
 
     private void AppendLog(string text)
     {
+        text = Regex.Replace(text ?? "", @"(?i)([?&](?:token|access_token)=)[^\s&#]+", "$1[redacted]");
         if (_logBox != null && _logBox.InvokeRequired)
         {
             try { _logBox.BeginInvoke((MethodInvoker)delegate { AppendLog(text); }); }
@@ -6348,6 +6517,16 @@ internal sealed class MainForm : Form
         }
         _statusText.Text = text;
         _statusText.ForeColor = color;
+    }
+
+    private string BuildStartupDiagnostics()
+    {
+        string text = _logBox == null ? "" : _logBox.Text;
+        if (text.Length > 16000) text = text.Substring(text.Length - 16000);
+        return ProductDisplayName + " " + Application.ProductVersion + Environment.NewLine
+            + "Time: " + DateTimeOffset.Now.ToString("o") + Environment.NewLine
+            + "Windows: " + Environment.OSVersion + Environment.NewLine
+            + "Log: " + Path.Combine(AppPaths.LogDir, "app.log") + Environment.NewLine + Environment.NewLine + text;
     }
 
     private void Fail(string message)

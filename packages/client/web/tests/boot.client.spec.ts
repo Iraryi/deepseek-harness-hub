@@ -19,6 +19,8 @@ const moduleFace = modulesClient as unknown as Record<string, unknown>
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  window.history.replaceState({}, '', '/')
   delete win.__DSH_BOOT__
   delete win.__ModuleLoader__
   delete transportGlobal.__DSH_TRANSPORT__
@@ -56,6 +58,18 @@ async function expectBootFailure(setup: () => void, message: string): Promise<vo
 }
 
 describe('bootstrap failure rendering', () => {
+  it('reports bootstrap failure to the native launcher for this navigation', async () => {
+    window.history.replaceState({}, '', `/?desktopBoot=${'a'.repeat(32)}`)
+    const postMessage = vi.fn()
+    vi.stubGlobal('chrome', { webview: { postMessage } })
+    await expectBootFailure(() => { delete win.__ModuleLoader__ }, 'bootstrap facade is missing')
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: 'dsh-web-boot-status', bootId: 'a'.repeat(32), state: 'failed', retryable: false,
+      failures: [], message: expect.stringContaining('bootstrap facade is missing'),
+    }))
+    expect(postMessage.mock.calls.some(([report]) => report.state === 'ready')).toBe(false)
+  })
+
   it('renders a missing bootstrap facade', async () => {
     await expectBootFailure(
       () => { delete win.__ModuleLoader__ },
@@ -90,6 +104,33 @@ describe('bootstrap failure rendering', () => {
 })
 
 describe('plugin activation', () => {
+  it.each(['pending', 'import-failed'] as const)('reports %s entries instead of announcing readiness', async (state) => {
+    window.history.replaceState({}, '', `/?desktopBoot=${'c'.repeat(32)}`)
+    const postMessage = vi.fn()
+    vi.stubGlobal('chrome', { webview: { postMessage } })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const target = installFacade()
+    win.__DSH_BOOT__ = {
+      rev: 'graph', entries: [{ id: 'broken', url: '/broken.js', rev: '1' }],
+      batches: [{ phase: 'application', url: '/application.js', rev: 'batch', entries: ['broken'] }],
+    }
+    const container = document.createElement('div')
+    document.body.append(container)
+    const entry = new AppWebEntry(container, { loadBundle: async () => {
+      target.load({ id: 'broken', factory: () => {
+        if (state === 'import-failed') throw new Error('test bundle import failed')
+        return { inject: ['missing-service'], apply: () => {} }
+      } })
+    } })
+    await entry.run()
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      state: 'failed', retryable: state === 'pending',
+      failures: [{ name: 'broken', state, missingServices: state === 'pending' ? ['missing-service'] : [] }],
+    }))
+    expect(postMessage.mock.calls.some(([report]) => report.state === 'ready')).toBe(false)
+    await entry.dispose()
+  })
+
   it('prefetches a parser-loaded immediate row through the injected bundle transport', async () => {
     const container = document.createElement('div')
     document.body.append(container)
@@ -158,6 +199,9 @@ describe('plugin activation', () => {
   })
 
   it('allows a modules-dependent row to be created before the modules row', async () => {
+    window.history.replaceState({}, '', `/?desktopBoot=${'b'.repeat(32)}&dshSurface=hub`)
+    const postMessage = vi.fn()
+    vi.stubGlobal('chrome', { webview: { postMessage } })
     const events: string[] = []
     const container = document.createElement('div')
     document.body.append(container)
@@ -215,6 +259,9 @@ describe('plugin activation', () => {
     expect(target.mode).toBe('live')
     expect(events).toEqual(['consumer', 'mount'])
     expect(container.textContent).toBe('mounted')
+    expect(postMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: 'dsh-web-boot-status', bootId: 'b'.repeat(32), state: 'ready', failures: [], retryable: false,
+    }))
     await entry.dispose()
   })
 })
