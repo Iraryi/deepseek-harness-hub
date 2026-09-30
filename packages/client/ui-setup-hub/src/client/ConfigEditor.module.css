@@ -1,0 +1,25 @@
+.root { color: var(--dsw-alias-label-primary); font-family: var(--dsw-font-family, 'Segoe UI', sans-serif); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
+.scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.header { display: flex; gap: 16px; flex-wrap: wrap; align-items: start; justify-content: space-between; }
+.header h2 { margin: 0 0 8px; font-size: 22px; }
+.header p { margin: 0 0 20px; max-width: 560px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
+.root button, .root select, .root input, .root textarea { font: inherit; color: inherit; border: 1px solid var(--dsw-alias-border-l3); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); padding: 10px 12px; box-sizing: border-box; min-width: 0; }
+.root button { cursor: pointer; }
+.root button:disabled { opacity: .5; cursor: default; }
+.root :focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #4776ef); outline-offset: 2px; }
+.target { display: flex; gap: 16px; align-items: center; margin-bottom: 24px; }
+.target select { min-width: 160px; }
+.fields { padding: 0; border: none; margin: 0; }
+.fields h3 { font-size: 15px; margin: 24px 0 16px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 18px 24px; }
+.row { display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.row input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--dsw-alias-state-business-primary); }
+.row textarea { resize: vertical; width: 100%; }
+.footer { flex: none; padding: 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; background: var(--dsw-alias-bg-layer-1); border-top: 1px solid var(--dsw-alias-border-l3); }
+.save:not(:disabled) { background: #167347; border-color: #167347; color: white; }
+.error { padding: 16px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 12px; margin: 16px 0; }
+.error pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.backdrop { position: fixed; inset: 0; z-index: 12000; background: #0006; display: grid; place-items: center; padding: 20px; }
+.dialog { width: min(520px, 100%); max-height: 80vh; overflow: auto; box-sizing: border-box; padding: 24px; border-radius: 18px; background: var(--dsw-alias-bg-layer-1); box-shadow: 0 16px 64px #0003; }
+.dialog h3 { margin-top: 0; }
+.dialog > div { display: flex; flex-wrap: wrap; justify-content: end; gap: 10px; margin-top: 24px; }

@@ -1,4 +1,5 @@
 import { classifySetupTrust, type SetupManifest } from '@deepseek-ai/dsh-setup-protocol'
+import type { ManagementOperation } from './management-contract.ts'
 
 interface WebViewMessageEvent {
   readonly data: unknown
@@ -173,6 +174,8 @@ export interface HubDshmkProject {
 
 /** One native-filtered page from the live or cached DSHMK catalog. */
 export interface HubDshmkCatalogPage {
+  readonly fetchedAt?: string
+  readonly refreshError?: string
   readonly categories: readonly HubDshmkCount[]
   readonly generatedAt: string
   readonly items: readonly HubDshmkProject[]
@@ -263,8 +266,13 @@ export interface HubOfflineItem {
   readonly path: string
 }
 
-/** Durable record for one Setup installed through HUB. */
+/** HUB receipt or a component observed in a DSH Profile. */
 export interface HubInstalledItem {
+  readonly origin?: 'hub' | 'profile'
+  readonly uninstallBlock?: 'shared' | 'unverified' | 'unsupported'
+  readonly homePath?: string
+  readonly componentPath?: string
+  readonly inventoryState?: 'record-only' | 'declared' | 'present' | 'unresolved' | 'missing' | 'partial' | 'unverified'
   readonly id: string
   readonly installedAt: string
   readonly kind: string
@@ -279,6 +287,8 @@ export interface HubInstalledItem {
 
 /** Initial local state for the dedicated HUB workspace. */
 export interface HubSnapshot {
+  readonly inventoryHome?: string
+  readonly inventoryWarnings?: readonly { readonly path: string; readonly message: string }[]
   readonly account: HubGitHubAccount
   readonly installed: readonly HubInstalledItem[]
   readonly library: readonly HubLibraryItem[]
@@ -289,6 +299,12 @@ export interface HubSnapshot {
 
 /** Generic native operations owned by the dedicated HUB executable. */
 export type HubOperation =
+  | ManagementOperation
+  | 'config-read'
+  | 'config-open'
+  | 'config-save'
+  | 'config-restart'
+  | 'config-dirty'
   | 'hub-snapshot'
   | 'dshmk-catalog'
   | 'dshmk-detail'
@@ -385,7 +401,7 @@ export function requestHubThroughDesktop<T>(
   if (webview === undefined) return Promise.reject(new Error('desktop bridge unavailable'))
   const requestId = globalThis.crypto.randomUUID()
   return new Promise((resolve, reject) => {
-    const timeout = options.timeoutMs ?? (operation === 'dshmk-install' || operation === 'community-prepare-setup' ? 30 * 60 * 1000 : 2 * 60 * 1000)
+    const timeout = options.timeoutMs ?? (operation === 'dshmk-install' || operation === 'community-prepare-setup' ? 30 * 60 * 1000 : operation === 'dshmk-catalog' ? 5 * 60 * 1000 : 2 * 60 * 1000)
     const timer = window.setTimeout(() => {
       webview.removeEventListener('message', onMessage)
       if (operation === 'dshmk-install' || operation === 'community-prepare-setup') postSetupCancel(webview)

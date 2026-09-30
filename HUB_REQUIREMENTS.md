@@ -1,8 +1,53 @@
 # Mandatory Desktop, Setup, and DSH HUB requirements
 
+## Enhancement distribution and management direction (2026-09-30)
+
+- Performance and current regressions remain first priority while adding enhancements: CONFIG footer geometry, DSH startup critical path, bounded optional HUB preload and wake behavior must not be displaced by feature scaffolding.
+- Preserve Full and introduce a distinct Overlay enhancement distribution for an already installed DSH. Overlay is not Lite's runtime downloader, must not overwrite official application files or take ownership of upstream uninstallation, and requires explicit host-version/profile compatibility verification.
+- Evolve HUB toward a management center with overview/health, providers/models, sessions, MCP/plugins, enhancements/appearance/scripts, connection capabilities and installation maintenance. CONFIG is a left-sidebar destination and remains an independent executable/onboarding entry.
+- Inventory the requested Codex++ capabilities and implement DSH-native equivalents using actual owning APIs. Do not present unused switches as features, invent model service tiers, modify Codex data, or silently rewrite historical session formats. Preserve existing HUB/Setup functionality and user data. Reference learning does not authorize copying differently licensed implementation code into MIT files.
+
+## Embedded CONFIG and optional window chrome (2026-09-30)
+
+- CONFIG must be reachable inside Settings and HUB without being hidden beneath the calling window; retain the independent CONFIG executable and first-run flow.
+- DSH and HUB drafts remain separate. Enable Save and restart only for actionable changes or a pending restart; never restart after a failed save. Leaving a dirty editor must offer keep editing, discard or save, not silently lose changes.
+- Retain existing configuration capabilities, explicit data/home/instance identity and default system window appearance. Red/yellow/green native window controls are an optional, independently persisted DSH/HUB style, not a mandatory redesign.
+
+## Upgrade retention qualification (2026-09-29)
+
+- Upgrade, repair and retained-data reinstall preserve existing configuration bytes, HUB receipts/workspaces, external Profile installations, sessions and user files. A changed installation language must not reset existing preferences or onboarding state.
+- Keep the selected data/home identity; do not silently migrate standard, portable, custom or upstream `.dsh` roots into each other. Reject destructive Runtime replacement when configured user data overlaps it.
+- Retain the previous Runtime during replacement; do not discard user modifications with successful extraction. A retained Runtime is recovery material, not a verified downgrade of migrated sessions.
+- Qualify the official Desktop migration on copies of historical data, including format compatibility and actual plugin activation, before release. Hash-retention tests alone do not satisfy that release gate.
+
+## Plugin management hardening (2026-09-29)
+
+- Preserve existing HUB, CONFIG, Setup, profile isolation, retained-data, and desktop capabilities during the official Desktop integration. Do not replace the product with a market-only shell.
+- Inventory must reconcile HUB receipts with actual DSH Profile declarations, including components installed outside HUB. Keep separate homes and profiles distinguishable; do not relabel ordinary dependencies as confirmed plugins.
+- Show provenance, observed package version, missing/unreadable configuration, and the distinction between declared, package-present, and runtime-active. A receipt or a directory is not proof of successful activation.
+- Rescanning must preserve usable results and search state during a pending request or failure, expose retry, and reflect external removal. Never silently delete retained receipts to make the list look consistent.
+- HUB and component Settings must share inventory capabilities: source, home/Profile and state filters, multiple search terms, visible counts and reset. Diagnostic export must be an explicit user action, exclude raw configurations and credentials, disclose local paths, and provide a manual-copy fallback when clipboard access fails.
+- Removal must revalidate its target and shared ownership. External enable, disable, update, and removal require an adapter for the owning DSH home/profile; do not invent an uninstall operation from an unowned path.
+- Harden management with isolated real install/remove cycles, corrupt-input coverage, native compilation, built-client integration, and visual/window regression checks. Record untested product capabilities explicitly; passing isolated checks does not qualify the complete application.
+- Test fixtures belong on D: and must not redirect host Shell Folders, reset application data, replace real profiles, or use the historical host-mutating Setup smoke.
+
 This file records direct product-owner requirements for the DeepSeek Harness Windows Desktop distribution. Every agent or contributor working on the affected surfaces must read it before planning or editing. These requirements remain active across context compaction, task handoff, and later development sessions unless the product owner explicitly replaces them.
 
 ## Product identity and process model
+
+### September 29, 2026 integrated Desktop direction
+
+- Provide an icon-and-label Plugin market entry above Settings in the main sidebar; its collapsed state retains an accessible icon. The entry opens DSH HUB, not an external market page or a replacement that drops existing capabilities.
+- Improve catalog freshness while preserving existing sources, browsing state, caches, and installation inventory. Display source generation and successful synchronization separately; an old downloaded file is not a fresh online response. Study the community Desktop market as a reference without replacing the official Desktop integration baseline.
+
+- The product owner explicitly selects an integrated enhanced application based on the official DSH Desktop, with HUB inside the application. This supersedes the earlier requirement to use WebView2 as the mandatory implementation and separate sibling processes as the default presentation. Official Desktop's Electron shell is the integration baseline; existing standalone launch, foreground, taskbar, tray, and independent management capabilities remain required user options.
+- Preserve every existing feature, workflow step, customization, and extension capability through the migration. Moving an action into a unified navigation area is allowed; silently removing it, replacing a functioning action with a placeholder, or exposing only discovery while losing installation is not.
+- Retain DSH, HUB, and CONFIG entry points, recognizable identities, and bilingual actions. Default navigation must switch within the integrated application, preserve page state, and not launch a duplicate runtime. A separately opened HUB or CONFIG must remain usable while DSH runs, and DSH service restarts must not close HUB or its installation progress.
+- Carry forward CONFIG-first onboarding, separate DSH/HUB preferences, all window/fullscreen and toolbar/taskbar options, loading customization, tray behavior, browser-extension directories, Web UI injection, and extension authoring. A backend-specific capability without a verified replacement remains an open migration requirement, not a removed feature.
+- Carry forward source discovery and live refresh, catalog provenance and fallback, GitHub connection/stars, detail modes and navigation restoration, Setup authoring and reviewed EXEs, one-click real installation, manual/offline acquisition, component editing, persistent inventory, updates, repairs, uninstall with default data retention, and restart feedback.
+- Use separate capability checks for official Desktop integration, legacy migration, and the enhanced distribution. The availability of upstream plugin management does not prove that it understands HUB receipts or that generic CLI installation targets Desktop's managed profile.
+- Preserve original user data while qualifying migrations on copies. Upgrading a session format or profile layout must not make the only available copy unreadable by the previous installation. Record compatibility limits and require verified restoration before offering rollback as a working feature.
+- The official Desktop's branding, update endpoints, signing identity, telemetry policy, and account integrations require explicit review before distribution under HUB identity. Upstream source reuse does not confer official credentials or an official distribution identity.
 
 - Deliver a user-facing Windows application rather than a browser launcher. The main Desktop, CONFIG, and DSH HUB are native EXE entry points hosting the Web UI through WebView2.
 - Keep Desktop and HUB as independent sibling processes with different EXE and tray icons, independent single-instance identities, independent local-service ports, and independent settings. Either process must be able to open or foreground the other without a duplicate-instance warning.

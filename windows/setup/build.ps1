@@ -26,6 +26,12 @@ $requiredLauncherFiles = @(
     'Microsoft.Web.WebView2.Core.dll',
     'Microsoft.Web.WebView2.WinForms.dll',
     'WebView2Loader.dll',
+    'community-registry.json',
+    'dshmk-catalog.json',
+    'enhancements.js',
+    'mobile\relay.mjs',
+    'mobile\pair.mjs',
+    'mobile\pair.html',
     'THIRD-PARTY-NOTICES.txt'
 )
 foreach ($name in $requiredLauncherFiles) {

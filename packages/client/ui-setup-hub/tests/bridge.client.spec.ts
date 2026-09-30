@@ -53,6 +53,17 @@ function installBridge(result: (request: Record<string, unknown>) => unknown) {
 }
 
 describe('desktop Setup bridge', () => {
+  it('allows the bounded catalog primary and alternate transfer time before timing out', async () => {
+    vi.useFakeTimers()
+    const { listeners } = installBridge(() => undefined)
+    const result = requestHubThroughDesktop('dshmk-catalog', { refresh: true })
+    const rejection = expect(result).rejects.toThrow('HUB request timed out')
+    await vi.advanceTimersByTimeAsync(285_000)
+    expect(listeners.size).toBe(1)
+    await vi.advanceTimersByTimeAsync(15_000)
+    await rejection
+    expect(listeners.size).toBe(0)
+  })
   it('reports browser-only use when no host bridge exists', async () => {
     expect(setupBridgeAvailable()).toBe(false)
     expect(sendSetupDesktopCommand('open-config')).toBe(false)

@@ -121,6 +121,24 @@ function openPanel() {
 }
 
 describe('SettingsRoot trigger', () => {
+  it('guards section navigation, Escape and the close button before unmounting', async () => {
+    const { renderSlot } = mount()
+    openPanel()
+    const call = renderSlot.mock.calls.find(args => args[0] === 'settings.section')!
+    const owner = call[1] as unknown as { registerLeaveGuard: (guard: () => Promise<boolean>) => () => void }
+    const guard = vi.fn(async () => false)
+    const remove = owner.registerLeaveGuard(guard)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Models' })) })
+    expect(screen.getByTestId('section-general')).toBeTruthy()
+    await act(async () => { fireEvent.keyDown(document, { key: 'Escape' }) })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Close' })) })
+    expect(guard).toHaveBeenCalledTimes(3)
+    remove()
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('renders the trigger seat content as the accessible name (no aria-label of its own)', () => {
     const { renderSlot } = mount()
     const trigger = screen.getByRole('button', { name: 'Settings' })

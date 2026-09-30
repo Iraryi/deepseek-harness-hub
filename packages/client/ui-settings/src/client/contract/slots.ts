@@ -123,6 +123,7 @@ export interface SettingsHeaderOwnerProps {
 export interface SettingsSectionOwnerProps {
   /** Close the settings panel (the shell owns the open state). */
   close: () => void
+  registerLeaveGuard?: (guard: () => Promise<boolean>) => () => void
 }
 
 /** Owner share of the currently active settings-backed onboarding step. */

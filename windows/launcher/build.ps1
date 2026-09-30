@@ -207,6 +207,12 @@ $commonSources = @(
     (Join-Path $source 'AssemblyInfo.cs'),
     $generatedAssembly,
     (Join-Path $source 'Config.cs')
+    (Join-Path $source 'OverlayBinding.cs')
+    (Join-Path $source 'ConfigEditor.cs')
+    (Join-Path $source 'EnhancementSettings.cs')
+    (Join-Path $source 'DesktopEndpoint.cs')
+    (Join-Path $source 'TrafficLightChrome.cs')
+    (Join-Path $source 'PluginInventory.cs')
 )
 $commonReferences = @(
     '/reference:System.dll',
@@ -220,12 +226,12 @@ $commonReferences = @(
 
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ "/win32icon:$icon" "/out:$output\dsh.exe" `
     @commonReferences "/reference:$webViewLib\Microsoft.Web.WebView2.Core.dll" `
-    "/reference:$webViewLib\Microsoft.Web.WebView2.WinForms.dll" @commonSources (Join-Path $source 'MainApp.cs')
+    "/reference:$webViewLib\Microsoft.Web.WebView2.WinForms.dll" @commonSources (Join-Path $source 'MainApp.cs') (Join-Path $source 'MainWarmup.cs') (Join-Path $source 'MainManager.cs') (Join-Path $source 'MobileConnection.cs')
 if ($LASTEXITCODE -ne 0) { throw "dsh.exe compilation failed: $LASTEXITCODE" }
 
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ "/win32icon:$hubIcon" "/out:$output\dsh-hub.exe" `
     @commonReferences "/reference:$webViewLib\Microsoft.Web.WebView2.Core.dll" `
-    "/reference:$webViewLib\Microsoft.Web.WebView2.WinForms.dll" @commonSources (Join-Path $source 'MainApp.cs')
+    "/reference:$webViewLib\Microsoft.Web.WebView2.WinForms.dll" @commonSources (Join-Path $source 'MainApp.cs') (Join-Path $source 'MainWarmup.cs') (Join-Path $source 'MainManager.cs') (Join-Path $source 'MobileConnection.cs')
 if ($LASTEXITCODE -ne 0) { throw "dsh-hub.exe compilation failed: $LASTEXITCODE" }
 
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ "/win32icon:$configIcon" "/out:$output\dsh-config.exe" `
@@ -238,6 +244,12 @@ Copy-Item (Join-Path $packageDirectory 'runtimes\win-x64\native\WebView2Loader.d
 Copy-Item (Join-Path $launcherRoot 'assets\community-registry.json') $output
 Copy-Item (Join-Path $launcherRoot 'assets\dshmk-catalog.json') $output
 Copy-Item (Join-Path $launcherRoot 'assets\THIRD-PARTY-NOTICES.txt') $output
+Copy-Item (Join-Path $launcherRoot 'assets\enhancements.js') $output
+$mobileOutput = Join-Path $output 'mobile'
+New-Item -ItemType Directory -Path $mobileOutput | Out-Null
+foreach ($asset in @('relay.mjs', 'pair.mjs', 'pair.html')) {
+    Copy-Item -LiteralPath (Join-Path $launcherRoot "..\mobile\$asset") -Destination $mobileOutput
+}
 Remove-Item -LiteralPath $generatedAssembly -Force
 Remove-Item -LiteralPath $hubIcon -Force
 Remove-Item -LiteralPath $configIcon -Force

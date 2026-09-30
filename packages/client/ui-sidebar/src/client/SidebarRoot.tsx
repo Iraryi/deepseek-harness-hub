@@ -121,6 +121,23 @@ export function SidebarRoot({
     }
   }, [pointerInside])
 
+  const [keyboardNavigation, setKeyboardNavigation] = useState(false)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return
+      if (['Tab', 'Enter', ' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        setKeyboardNavigation(true)
+      }
+    }
+    const onPointerDown = (): void => { setKeyboardNavigation(false) }
+    document.addEventListener('keydown', onKeyDown, true)
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [])
+
   const buildVersion = localBuildVersion()
 
   return (
@@ -144,6 +161,8 @@ export function SidebarRoot({
           <button
             type="button"
             className={clsx(css.brand, css.wide)}
+            data-keyboard-navigation={keyboardNavigation || undefined}
+            onDragStart={(event) => { event.preventDefault() }}
             aria-label={t('session.new.label')}
             onClick={() => { startSession() }}
           >

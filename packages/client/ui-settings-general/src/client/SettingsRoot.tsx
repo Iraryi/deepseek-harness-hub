@@ -45,6 +45,20 @@ type PanelProps = {
  * open, so the listener lifetime is the panel's).
  */
 function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelProps) {
+  const leaveGuard = useRef<(() => Promise<boolean>) | undefined>(undefined)
+  const leaving = useRef(false)
+  const registerLeaveGuard = useCallback((guard: () => Promise<boolean>) => {
+    leaveGuard.current = guard
+    return () => { if (leaveGuard.current === guard) leaveGuard.current = undefined }
+  }, [])
+  const requestLeave = useCallback((action: () => void) => {
+    if (leaving.current) return
+    if (!leaveGuard.current) { action(); return }
+    leaving.current = true
+    void leaveGuard.current().then((allowed) => { if (allowed) action() }, () => undefined)
+      .finally(() => { leaving.current = false })
+  }, [])
+  const guardedClose = useCallback(() => { requestLeave(onClose) }, [requestLeave, onClose])
   // Entries can unmount underneath the requested id, so the render-time
   // projection falls back to the first row when the id is gone.
   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
@@ -52,11 +66,11 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape' && !e.defaultPrevented) guardedClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => { document.removeEventListener('keydown', onKeyDown) }
-  }, [onClose])
+  }, [guardedClose])
 
   // Entering the dialog focuses the close button; the root restores its trigger on close.
   const closeButton = useRef<HTMLButtonElement | null>(null)
@@ -64,7 +78,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
 
   return (
     <div className={css.overlay} role="presentation">
-      <div className={css.mask} aria-hidden="true" onClick={onClose} />
+      <div className={css.mask} aria-hidden="true" onClick={guardedClose} />
       <div className={css.panel} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <nav className={css.nav}>
           <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
@@ -75,7 +89,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
                 type="button"
                 className={clsx(css.navCell, row.id === active && css.active)}
                 aria-current={row.id === active ? 'true' : undefined}
-                onClick={() => { onSelect(row.id) }}
+                onClick={() => { if (row.id !== active) requestLeave(() => { onSelect(row.id) }) }}
               >
                 {navIcon(row.id)}
                 <span className={css.navLabel}>{row.label}</span>
@@ -86,13 +100,13 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
         <div className={css.content}>
           <div className={css.header}>
             <div className={css.actions}>{renderSlot('settings.action', {})}</div>
-            <button ref={closeButton} type="button" className={css.close} onClick={onClose}>
+            <button ref={closeButton} type="button" className={css.close} onClick={guardedClose}>
               <IconCloseOutline16 size={14} />
               <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
             </button>
           </div>
           <div className={css.options}>
-            {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
+            {active !== undefined && renderSlot('settings.section', { close: guardedClose, registerLeaveGuard }, { only: active })}
           </div>
         </div>
       </div>

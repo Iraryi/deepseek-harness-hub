@@ -11,10 +11,7 @@
 
 <div align="center">
 
-  [简体中文](README.zh.md) ·
-  <a href="https://github.com/Iraryi/deepseek-harness-hub/releases">Downloads</a> ·
-  <a href="docs/hub/setup-package-spec.md">Setup specification</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a>
+  [简体中文](README.zh.md) · <a href="https://github.com/Iraryi/deepseek-harness-hub/releases">Downloads</a> · <a href="docs/hub/setup-package-spec.md">Setup specification</a> · <a href="CONTRIBUTING.md">Contributing</a>
 
 </div>
 
@@ -45,9 +42,12 @@ The current Windows assets are published on the [Releases page](https://github.c
 | Asset | Best for | Network requirement |
 | --- | --- | --- |
 | **Full Setup** | First-time users and unreliable networks | Can install the bundled Runtime and WebView2 offline |
+| **Overlay Setup (preview)** | Add enhancements to an existing compatible DSH installation | Reuses an explicitly selected alpha.2 Runtime; installs separately without replacing base files |
 | **Lite Setup** | Smaller initial download | Downloads a verified Runtime, or imports a manually downloaded Runtime ZIP |
 | **Portable ZIP** | Evaluation and removable storage | Requires WebView2 already installed |
 | **Runtime ZIP** | Repair, offline transfer, and Lite Setup import | No installer UI by itself |
+
+Full includes the HUB management overview, optional desktop enhancements, embedded CONFIG and opt-in LAN phone access; Overlay is not required for these features. The [enhancement roadmap](docs/hub/enhancement-manager-roadmap.md) distinguishes implemented capabilities from future official Desktop adapters. Phone access currently uses unencrypted HTTP on a trusted private LAN, not a public tunnel. Some catalog entries with valid installation instructions still need one-click eligibility fixes; see the current release's known issues.
 
 ## Product experience
 

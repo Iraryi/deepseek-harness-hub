@@ -134,6 +134,19 @@
   min-width: 0;
 }
 
+.brand:focus { outline: none; }
+.brand[data-keyboard-navigation]:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.brand, .brand * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
 .brandMark {
   flex: none;
   display: inline-flex;
@@ -235,10 +248,10 @@
   height: 10px;
   padding: 0 3px;
   border-radius: 2px;
-  color: var(--dsw-alias-label-primary-inverted);
-  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-3);
   font-family: var(--ds-font-family-code);
-  font-size: 6px;
+  font-size: 8px;
   font-weight: 500;
   line-height: 10px;
   white-space: nowrap;

@@ -2,7 +2,7 @@
 
 Status: implemented
 
-[中文](2026-08-22-hub-library-persistence-across-setup-lifecycle.zh.md) | English
+English | [中文](2026-08-22-hub-library-persistence-across-setup-lifecycle.zh.md)
 
 ## Problem
 
@@ -16,6 +16,8 @@ HUB stores installed Setup records and their editable workspaces under the activ
 
 ## Alternatives considered
 
+[Profile inventory reconciliation](2026-09-29-hub-profile-inventory-reconciliation.md) complements retained receipts with external component observations; it does not reconstruct or replace Setup history.
+
 **Store HUB records beside the executable as application files.** Rejected because update, repair, and uninstall own that directory and must be free to replace binaries without risking user-managed Setup workspaces.
 
 **Reconstruct installed state only from DSH profile dependencies.** Rejected because the profile does not retain the Setup manifest, provenance, receipt, editable workspace, uninstall metadata, or a stable mapping from one package dependency to one HUB entry.
@@ -26,8 +28,14 @@ HUB stores installed Setup records and their editable workspaces under the activ
 
 ## Consequences
 
+The [Setup retention helpers](../../../../windows/setup/README.md) preserve existing configuration bytes on retained-data reinstall and retain the previous Runtime after replacement. Root selection honors a custom application data directory; implicit standard/portable migration is blocked. A persistent transaction journal stops retries until an interrupted switch has been inspected. These protections do not implement a session-format migration or guarantee activation of plugins modified inside an older Runtime.
+
 Update and repair replace application and Runtime files while preserving the installed Setup library. Default uninstall may leave the application directory because portable user data and its identity marker remain there by design. Explicit delete-data removes both standard and portable roots plus the portable marker. Installed-record recovery retains one prior valid snapshot and favors the workspace that exists under the active HUB library root.
 
 ## Testing
+
+Promotion tests use a separate watcher to hold a staging file during validation and switching, then release it. Bounded retries complete the same-directory switch and retain the old Runtime; permanent locks still fail without replacing it. This models transient Windows handle contention, not proof of which application held a particular user's directory. The packaged Runtime also requires a real-archive replacement check; a version-only executable fixture cannot establish its behavior.
+
+The isolated [retention harness](../../../../windows/setup/tests/verify-upgrade-retention.ps1) executes production Setup helpers with version-only Runtime fixtures and compares file hashes across standard, portable and custom roots. It covers archive/folder replacement and non-destructive rejection of malformed, locked and interrupted states. These checks do not run a historical installer, boot the application or qualify the official Desktop migration. Host-mutating legacy smoke scripts must not run on a user's computer.
 
 The Windows launcher build compiles the portable-root detection and installed-record recovery paths. Focused HUB smoke coverage loads a retained installed record through the native snapshot path, corrupts the primary index, recovers the backup, and rebinds a stale workspace path. Setup smoke coverage exercises standard update retention and repeated portable install, update, keep-data uninstall, marker-less legacy reinstall, native HUB loading, and explicit delete-data cleanup. Full and Lite Inno Setup assets compile from the same hotfix sources and packaged Runtime.

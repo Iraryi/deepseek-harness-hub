@@ -11,7 +11,11 @@ English | [中文](README.zh.md)
 
 `dsh-client-ui-settings-general` is the settings shell of the dsh web client: the Settings panel opens from the sidebar's bottom control, a connection-failure indicator beside that control offers immediate recovery, the navigation is built from the sections features contribute, and first-run users are walked through one onboarding step at a time. It also registers everything on the Settings pages that belongs to no single feature: the trigger/header/close chrome content, the local configuration-file action, the General section and its `settings.general.item` slot, and the `settings` dictionaries. Feature-owned rows (Permission, Language, Appearance), sections (Models), and conditional onboarding steps stay with their feature packages; the shell itself ships no onboarding copy of its own.
 
+The active section can register an asynchronous leave guard through its owner props. Section changes, the close button, backdrop clicks and Escape wait for permission; repeated requests are coalesced while a decision is pending. The section owns its draft and confirmation UI. Removing its guard restores ordinary immediate navigation.
+
 ## Table of Contents
+
+Sections containing a `data-config-editor` viewport own their scrolling and bottom action area. The shell removes its outer padding and scrolling for that viewport; other sections retain the ordinary options scroller.
 
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)

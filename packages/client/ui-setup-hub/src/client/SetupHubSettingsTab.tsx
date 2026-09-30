@@ -1,5 +1,7 @@
 /* oxlint-disable @stylistic/max-len, typescript/use-unknown-in-catch-callback-variable */
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { ConfigEditor } from './ConfigEditor.tsx'
+import { ManagementCenter } from './ManagementCenter.tsx'
 import {
   IconCheckOutline16,
   IconCodeOutline16,
@@ -30,6 +32,7 @@ import {
   type SetupTrust,
 } from '@deepseek-ai/dsh-setup-protocol'
 import type { SetupRegistryIndex } from '@deepseek-ai/dsh-setup-registry'
+import { filterInventory, inventoryDiagnostic, inventoryProfileKey } from './inventory.ts'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   HubGitHubAccount,
@@ -114,7 +117,7 @@ type InstallState =
   | { readonly status: 'installed'; readonly message: string }
   | { readonly status: 'error'; readonly message: string }
 
-type HubSection = 'home' | 'github' | 'catalog' | 'starred' | 'library' | 'offline' | 'installed' | 'builder' | 'account' | 'security'
+type HubSection = 'home' | 'github' | 'catalog' | 'starred' | 'library' | 'offline' | 'installed' | 'builder' | 'account' | 'security' | 'overview' | 'enhancements' | 'mobile'
 type TrustFilter = 'all' | SetupTrust
 type DiscoverySource = 'dshmk' | 'community' | 'github'
 type HubTheme = 'system' | 'light' | 'dark'
@@ -168,9 +171,25 @@ export function SetupHubSettingsTab(props: SetupHubSettingsTabProps): ReactNode 
 
 /** Full-window HUB workspace used by the dedicated Windows executable. */
 export function SetupHubDesktopSurface(props: SetupHubDesktopSurfaceProps): ReactNode {
+  const [configOpen, setConfigOpen] = useState(false)
+  const configGuard = useRef<(() => Promise<boolean>) | undefined>(undefined)
+  const configLeaving = useRef(false)
+  const registerConfigGuard = useCallback((guard: () => Promise<boolean>) => {
+    configGuard.current = guard
+    return () => { if (configGuard.current === guard) configGuard.current = undefined }
+  }, [])
+  const leaveConfig = (action: () => void): void => {
+    if (configLeaving.current) return
+    if (!configGuard.current) { action(); return }
+    configLeaving.current = true
+    void configGuard.current().then((allowed) => { if (allowed) action() }, () => undefined)
+      .finally(() => { configLeaving.current = false })
+  }
   const preferences = useMemo(readHubPreferences, [])
   const [section, setSection] = useState<HubSection>(preferences.startPage)
   const [snapshotRequest, setSnapshotRequest] = useState(0)
+  const [inventoryRefreshing, setInventoryRefreshing] = useState(false)
+  const [inventoryError, setInventoryError] = useState<string>()
   const [snapshot, setSnapshot] = useState<AsyncState<HubSnapshot>>({ status: 'loading' })
   const [community, setCommunity] = useState<AsyncState<HubCommunityRegistry>>({ status: 'idle' })
   const [github, setGitHub] = useState<AsyncState<readonly HubGitHubRepository[]>>({ status: 'idle' })
@@ -189,10 +208,18 @@ export function SetupHubDesktopSurface(props: SetupHubDesktopSurfaceProps): Reac
 
   useEffect(() => {
     let current = true
-    setSnapshot({ status: 'loading' })
+    setInventoryRefreshing(true)
+    setInventoryError(undefined)
+    setSnapshot(previous => previous.status === 'ready' ? previous : { status: 'loading' })
     void props.requestHub<HubSnapshot>('hub-snapshot').then(
-      (value) => { if (current) setSnapshot({ status: 'ready', data: value }) },
-      (error) => { if (current) setSnapshot({ status: 'error', message: errorMessage(error) }) },
+      (value) => { if (current) { setSnapshot({ status: 'ready', data: value }); setInventoryRefreshing(false) } },
+      (error) => {
+        if (!current) return
+        const message = errorMessage(error)
+        setInventoryRefreshing(false)
+        setInventoryError(message)
+        setSnapshot(previous => previous.status === 'ready' ? previous : { status: 'error', message })
+      },
     )
     return () => { current = false }
   }, [props.requestHub, snapshotRequest])
@@ -248,7 +275,7 @@ export function SetupHubDesktopSurface(props: SetupHubDesktopSurfaceProps): Reac
     )
   }
   const openSection = (next: HubSection): void => {
-    setSection(next)
+    leaveConfig(() => { setConfigOpen(false); setSection(next) })
   }
   const loadStarred = (): void => {
     setStarred({ status: 'loading' })
@@ -369,6 +396,7 @@ export function SetupHubDesktopSurface(props: SetupHubDesktopSurfaceProps): Reac
   }
 
   const content = (() => {
+    if (section === 'overview' || section === 'enhancements' || section === 'mobile') return <ManagementCenter key={section} section={section} request={props.requestHub} chinese={props.t('navHome') === '主页'} registerLeaveGuard={registerConfigGuard} />
     if (section === 'catalog') return <CatalogWorkspace {...props} display="desktop" onInstalled={() => { markDesktopRestartPending(); refreshSnapshot() }} />
     if (snapshot.status === 'loading' || snapshot.status === 'idle') return <HubLoading t={props.t} />
     if (snapshot.status === 'error') return <HubFailure message={snapshot.message} onRetry={refreshSnapshot} t={props.t} />
@@ -399,7 +427,7 @@ export function SetupHubDesktopSurface(props: SetupHubDesktopSurfaceProps): Reac
         detailContent={preferences.detailContent}
         detailEntry={preferences.detailEntry}
         detailMode={preferences.detailMode}
-        installedIds={new Set(data.installed.map(item => item.id))}
+        installedIds={new Set(data.installed.filter(item => item.inventoryState === undefined || item.inventoryState === 'declared' || item.inventoryState === 'present').map(item => item.id))}
         onInstalled={() => { markDesktopRestartPending(); refreshSnapshot() }}
         onRestartDesktop={restartDesktop}
         pageSize={preferences.pageSize}
@@ -421,7 +449,7 @@ export function SetupHubDesktopSurface(props: SetupHubDesktopSurfaceProps): Reac
       <LibraryView data={data} onCreate={() => { createDraft() }} onDelete={deleteDraft} onOpenPath={openPath} t={props.t} />
     )
     if (section === 'offline') return <OfflineView data={data} onOpenPath={openPath} t={props.t} />
-    if (section === 'installed') return <InstalledView data={data} onOpenPath={openPath} onUninstall={uninstall} t={props.t} />
+    if (section === 'installed') return <InstalledView data={data} refreshing={inventoryRefreshing} error={inventoryError} onOpenPath={openPath} onUninstall={uninstall} onRefresh={refreshSnapshot} t={props.t} />
     if (section === 'builder') return <BuilderView data={data} onCreate={() => { createDraft() }} onOpenPath={openPath} t={props.t} />
     if (section === 'account') return <AccountView account={data.account} action={action} onLogin={login} onLogout={logout} t={props.t} />
     return <SecurityView data={data} t={props.t} />
@@ -449,13 +477,13 @@ export function SetupHubDesktopSurface(props: SetupHubDesktopSurfaceProps): Reac
         ) : null}
         <div className={css.headerActions}>
           {restartPending ? <button className={css.restartDesktopButton} type="button" data-busy={restartAction.status === 'loading' || undefined} disabled={restartAction.status === 'loading'} onClick={() => { void restartDesktop().catch(() => undefined) }}><IconRefreshOutline16 size={16} />{restartAction.status === 'loading' ? props.t('restartingDesktop') : props.t('restartDesktop')}</button> : null}
-          <button type="button" onClick={props.openConfig} disabled={!props.desktopAvailable}><IconSettingsOutline16 size={16} />{props.t('openConfig')}</button>
-          <button type="button" onClick={props.leaveHub}>{props.t('returnToDesktop')}</button>
+          <button type="button" onClick={() => { leaveConfig(() => { setConfigOpen(!configOpen) }) }} disabled={!props.desktopAvailable}><IconSettingsOutline16 size={16} />{configOpen ? props.t('configClose') : props.t('openConfig')}</button>
+          <button type="button" onClick={() => { leaveConfig(props.leaveHub) }}>{props.t('returnToDesktop')}</button>
         </div>
       </header>
       <div className={css.hubShell}>
-        <FunctionNavigation active={section} counts={counts} onSelect={openSection} t={props.t} />
-        <main className={css.hubMain} data-section={section}>{content}</main>
+        <FunctionNavigation active={configOpen ? undefined : section} configOpen={configOpen} onConfig={() => { leaveConfig(() => { setConfigOpen(true) }) }} desktopAvailable={props.desktopAvailable} counts={counts} onSelect={openSection} t={props.t} />
+        <main className={css.hubMain} data-section={configOpen ? 'config' : section}>{configOpen ? <ConfigEditor {...props} initialTarget="hub" registerLeaveGuard={registerConfigGuard} /> : content}</main>
       </div>
       {action.status === 'error' ? <div className={css.toast} role="alert"><IconWarningOutline16 size={16} />{action.message}</div> : null}
       {restartAction.status === 'error' ? <div className={css.toast} role="alert"><IconWarningOutline16 size={16} />{restartAction.message}</div> : null}
@@ -487,7 +515,10 @@ export function SetupHubDesktopSurface(props: SetupHubDesktopSurfaceProps): Reac
 }
 
 function FunctionNavigation(props: {
-  readonly active: HubSection
+  readonly active: HubSection | undefined
+  readonly configOpen: boolean
+  readonly onConfig: () => void
+  readonly desktopAvailable: boolean
   readonly counts: { readonly installed: number | undefined; readonly library: number | undefined; readonly offline: number | undefined; readonly starred: number | undefined }
   readonly onSelect: (section: HubSection) => void
   readonly t: SetupHubDesktopSurfaceProps['t']
@@ -505,6 +536,9 @@ function FunctionNavigation(props: {
     ['builder', 'navBuilder', <IconCodeOutline16 size={16} key="builder" />, undefined],
   ]
   const system: readonly [HubSection, SetupHubLocaleKey, ReactNode, number | undefined][] = [
+    ['overview', 'navOverview', <IconDataOutline16 size={16} key="overview" />, undefined],
+    ['enhancements', 'navEnhancements', <IconEditOutline16 size={16} key="enhancements" />, undefined],
+    ['mobile', 'navMobile', <IconGlobeOutline14 size={16} key="mobile" />, undefined],
     ['account', 'navAccount', <IconUserOutline16 size={16} key="account" />, undefined],
     ['security', 'navSecurity', <IconWarningOutline16 size={16} key="security" />, undefined],
   ]
@@ -512,13 +546,13 @@ function FunctionNavigation(props: {
     <aside className={css.functionNav} aria-label={props.t('functionArea')}>
       <div className={css.navGroup}><p>{props.t('explore')}</p>{primary.map(item => <FunctionNavButton key={item[0]} item={item} {...props} />)}</div>
       <div className={css.navGroup}><p>{props.t('myWorkspace')}</p>{workspace.map(item => <FunctionNavButton key={item[0]} item={item} {...props} />)}</div>
-      <div className={css.navGroup}><p>{props.t('systemArea')}</p>{system.map(item => <FunctionNavButton key={item[0]} item={item} {...props} />)}</div>
+      <div className={css.navGroup}><p>{props.t('systemArea')}</p><button type="button" disabled={!props.desktopAvailable} data-section="config" data-active={props.configOpen || undefined} aria-current={props.configOpen ? 'page' : undefined} onClick={props.onConfig}><IconSettingsOutline16 size={16} /><span>CONFIG</span></button>{system.map(item => <FunctionNavButton key={item[0]} item={item} {...props} />)}</div>
     </aside>
   )
 }
 
 function FunctionNavButton(props: {
-  readonly active: HubSection
+  readonly active: HubSection | undefined
   readonly item: readonly [HubSection, SetupHubLocaleKey, ReactNode, number | undefined]
   readonly onSelect: (section: HubSection) => void
   readonly t: SetupHubDesktopSurfaceProps['t']
@@ -669,6 +703,9 @@ function DshmkDiscovery(props: {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<HubPreferences['pageSize']>(props.pageSize)
   const [requestVersion, setRequestVersion] = useState(0)
+  const forceRefresh = useRef(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState('')
   const [catalog, setCatalog] = useState<AsyncState<HubDshmkCatalogPage>>({ status: 'loading' })
   const [selected, setSelected] = useState<HubDshmkProject | undefined>()
   const [detail, setDetail] = useState<AsyncState<HubDshmkDetail>>({ status: 'idle' })
@@ -677,20 +714,28 @@ function DshmkDiscovery(props: {
   const [unpinnedConfirmation, setUnpinnedConfirmation] = useState<HubDshmkProject | undefined>()
   const scrollPosition = useRef(0)
 
-  useEffect(() => subscribeHubCatalogUpdates(() => { setRequestVersion(version => version + 1) }), [])
+  useEffect(() => subscribeHubCatalogUpdates(() => {
+    setRequestVersion(version => version + 1)
+  }), [])
 
   useEffect(() => {
     let current = true
     const timer = window.setTimeout(() => {
-      setCatalog({ status: 'loading' })
-      void props.requestHub<HubDshmkCatalogPage>('dshmk-catalog', { category, page, pageSize, projectType, query, searchScope, sort, validation }).then(
+      setRefreshing(true)
+      setRefreshError('')
+      setCatalog(existing => existing.status === 'ready' ? existing : { status: 'loading' })
+      const refresh = forceRefresh.current
+      forceRefresh.current = false
+      void props.requestHub<HubDshmkCatalogPage>('dshmk-catalog', { category, page, pageSize, projectType, query, searchScope, sort, validation, refresh }).then(
         (value) => {
           if (!current) return
+          setRefreshing(false)
           if (!isDshmkCatalogPage(value)) {
             setCatalog({ status: 'error', message: props.t('catalogMalformed') })
             return
           }
           setCatalog({ status: 'ready', data: value })
+          setRefreshError(value.refreshError ?? '')
           if (value.page !== page) setPage(value.page)
           void props.requestHub<Readonly<Record<string, HubDshmkLiveMetadata>>>('dshmk-live-metadata', {
             repositoryIds: value.items.map(item => item.repositoryId),
@@ -699,13 +744,22 @@ function DshmkDiscovery(props: {
             () => undefined,
           )
         },
-        (error) => { if (current) setCatalog({ status: 'error', message: errorMessage(error) }) },
+        (error) => {
+          if (!current) return
+          setRefreshing(false)
+          setRefreshError(errorMessage(error))
+          setCatalog(existing => existing.status === 'ready' ? existing : { status: 'error', message: errorMessage(error) })
+        },
       )
     }, query.length === 0 ? 0 : 220)
     return () => { current = false; window.clearTimeout(timer) }
   }, [category, page, pageSize, projectType, props.requestHub, query, requestVersion, searchScope, sort, validation])
 
   const resetPage = (action: () => void): void => { action(); setPage(1) }
+  const refreshCatalog = (): void => {
+    forceRefresh.current = true
+    setRequestVersion(value => value + 1)
+  }
   const openDetail = (project: HubDshmkProject): void => {
     const host = document.querySelector<HTMLElement>('main[data-section="github"]')
     scrollPosition.current = host?.scrollTop ?? 0
@@ -789,9 +843,10 @@ function DshmkDiscovery(props: {
     <section className={css.dshmkWorkspace}>
       <div className={css.dshmkHero}>
         <div>
-          <span className={css.marketSource} data-mode={data?.sourceMode ?? 'live'}>{props.t(sourceKey)}</span>
+          {data !== undefined ? <span className={css.marketSource} data-mode={data.sourceMode}>{props.t(sourceKey)}</span> : null}
           <strong>{props.t('dshmkCatalogTitle')}</strong>
-          <p>{props.t('dshmkCatalogBody')}</p>
+          <p>{props.t('marketIntro')}</p>
+          <p role="status">{refreshing ? props.t('catalogRefreshing') : <>{props.t('catalogFetched')}: {data?.fetchedAt ? new Date(data.fetchedAt).toLocaleString(resolveLanguage()) : '—'}</>}</p>
         </div>
         <dl>
           <div><dt>{props.t('dshmkProjects')}</dt><dd>{data?.total ?? '—'}</dd></div>
@@ -828,10 +883,17 @@ function DshmkDiscovery(props: {
           typeOptions={typeOptions}
           validation={validation}
         />
-        <button className={css.refreshButton} type="button" onClick={() => { setRequestVersion(value => value + 1) }} aria-label={props.t('retry')} title={props.t('retry')}><IconRefreshOutline16 size={16} /></button>
+        <button className={css.refreshButton} type="button" disabled={refreshing} onClick={refreshCatalog} aria-label={props.t('retry')} title={props.t('retry')}><IconRefreshOutline16 size={16} /></button>
       </div>
       {catalog.status === 'loading' || catalog.status === 'idle' ? <HubLoading t={props.t} compact /> : null}
-      {catalog.status === 'error' ? <HubFailure message={catalog.message} onRetry={() => { setRequestVersion(value => value + 1) }} t={props.t} /> : null}
+      {catalog.status === 'error' ? <HubFailure message={catalog.message} onRetry={refreshCatalog} t={props.t} /> : null}
+      {data !== undefined && refreshError ? (
+        <div className={css.catalogNotice} role="status">
+          <strong>{props.t('catalogCachedNotice')}</strong>
+          <span>{props.t('catalogCachedHelp')}</span>
+          <details><summary>{props.t('catalogDiagnostics')}</summary><pre>{refreshError}</pre></details>
+        </div>
+      ) : null}
       {data !== undefined ? (
         <>
           <div className={css.resultSummary}><span>{props.t('showingResults').replace('{count}', String(data.total))}</span><span>{props.t('dshmkAttribution')}</span></div>
@@ -1232,15 +1294,16 @@ function ChoiceMenu(props: { readonly label: string; readonly onChange: (value: 
   useEffect(() => {
     if (!open) return
     const close = (event: PointerEvent): void => { if (root.current !== null && !root.current.contains(event.target as Node)) setOpen(false) }
-    const escape = (event: KeyboardEvent): void => { if (event.key === 'Escape') setOpen(false) }
+    const escape = (event: KeyboardEvent): void => { if (event.key === 'Escape') { setOpen(false); root.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true }) } }
+    root.current?.querySelector<HTMLButtonElement>('button[aria-selected="true"]')?.focus({ preventScroll: true })
     document.addEventListener('pointerdown', close)
     document.addEventListener('keydown', escape)
     return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', escape) }
   }, [open])
   return (
     <div className={css.choiceMenu} ref={root} data-open={open || undefined}>
-      <button type="button" aria-expanded={open} onClick={() => { setOpen(value => !value) }}><span><small>{props.label}</small><strong>{selected?.label ?? props.value}</strong></span><b>⌄</b></button>
-      <div className={css.choicePopover} role="listbox" aria-label={props.label}>{props.options.map(option => <button type="button" key={option.value} role="option" aria-selected={option.value === props.value} data-active={option.value === props.value || undefined} onClick={() => { props.onChange(option.value); setOpen(false) }}>{option.label}{option.value === props.value ? <IconCheckOutline16 size={15} /> : null}</button>)}</div>
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => { setOpen(value => !value) }}><span><small>{props.label}</small><strong>{selected?.label ?? props.value}</strong></span><b>⌄</b></button>
+      <div className={css.choicePopover} role="listbox" aria-label={props.label} aria-hidden={!open}>{props.options.map(option => <button type="button" tabIndex={open ? 0 : -1} key={option.value} role="option" aria-selected={option.value === props.value} data-active={option.value === props.value || undefined} onClick={() => { props.onChange(option.value); setOpen(false); root.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true }) }}>{option.label}{option.value === props.value ? <IconCheckOutline16 size={15} /> : null}</button>)}</div>
     </div>
   )
 }
@@ -1575,22 +1638,59 @@ function OfflineRow(props: { readonly item: HubOfflineItem; readonly onOpenPath:
 }
 
 function InstalledView(props: {
+  readonly embedded?: boolean
   readonly data: HubSnapshot
+  readonly refreshing: boolean
+  readonly error: string | undefined
   readonly onOpenPath: (path: string) => void
   readonly onUninstall: (item: HubInstalledItem) => void
+  readonly onRefresh: () => void
   readonly t: SetupHubDesktopSurfaceProps['t']
 }): ReactNode {
+  const [query, setQuery] = useState('')
+  const [origin, setOrigin] = useState('all')
+  const [profile, setProfile] = useState('all')
+  const [status, setStatus] = useState('all')
+  const [diagnostic, setDiagnostic] = useState('')
+  const [copied, setCopied] = useState(false)
+  const items = filterInventory(props.data.installed, { query, origin, profile, status })
+  const profiles = [...new Map(props.data.installed.map(item => [inventoryProfileKey(item), { value: inventoryProfileKey(item), label: [item.profile || props.t('inventoryUnknownProfile'), item.homePath].filter(Boolean).join(' · ') }])).values()]
+  if (profile !== 'all' && !profiles.some(option => option.value === profile)) profiles.push({ value: profile, label: props.t('inventoryUnavailableProfile') })
+  const copyDiagnostic = async (item: HubInstalledItem): Promise<void> => {
+    setCopied(false)
+    setDiagnostic('')
+    const report = inventoryDiagnostic(item)
+    try { await navigator.clipboard.writeText(report); setCopied(true) }
+    catch { setDiagnostic(report) }
+  }
   return (
-    <div className={css.page}>
-      <PageHeader eyebrow={props.t('installedEyebrow')} title={props.t('installedTitle')} description={props.t('installedIntro')} />
+    <div className={props.embedded ? css.inventorySection : css.page}>
+      {props.embedded ? null : <PageHeader eyebrow={props.t('installedEyebrow')} title={props.t('installedTitle')} description={props.t('installedIntro')} />}
+      <div className={`${css.pageActions} ${css.inventoryToolbar}`}>
+        {props.embedded ? null : <button type="button" disabled={props.refreshing} onClick={props.onRefresh}><IconRefreshOutline16 size={16} />{props.t(props.refreshing ? 'inventoryRefreshing' : 'inventoryRefresh')}</button>}
+        <label className={css.searchBox}><IconSearchOutline16 size={16} /><input value={query} onChange={(event) => { setQuery(event.currentTarget.value) }} aria-label={props.t('inventorySearch')} placeholder={props.t('inventorySearch')} /></label>
+      </div>
+      <div className={css.inventoryFilters}>
+        <ChoiceMenu label={props.t('inventorySourceFilter')} value={origin} onChange={setOrigin} options={[{ value: 'all', label: props.t('inventoryAll') }, { value: 'hub', label: props.t('inventoryOriginHub') }, { value: 'profile', label: props.t('inventoryOriginProfile') }]} />
+        <ChoiceMenu label={props.t('inventoryProfileFilter')} value={profile} onChange={setProfile} options={[{ value: 'all', label: props.t('inventoryAll') }, ...profiles]} />
+        <ChoiceMenu label={props.t('inventoryStatusFilter')} value={status} onChange={setStatus} options={[{ value: 'all', label: props.t('inventoryAll') }, { value: 'attention', label: props.t('inventoryAttention') }, { value: 'removable', label: props.t('inventoryRemovable') }]} />
+      </div>
+      <div className={css.inventorySummary}><span>{props.t('inventoryResultCount').replace('{visible}', String(items.length)).replace('{total}', String(props.data.installed.length))}</span><button type="button" onClick={() => { setQuery(''); setOrigin('all'); setProfile('all'); setStatus('all') }}>{props.t('inventoryReset')}</button></div>
+      {copied ? <p role="status">{props.t('inventoryDiagnosticCopied')}</p> : null}
+      {diagnostic ? <label className={css.inventoryDiagnostic}>{props.t('inventoryDiagnosticManual')}<textarea aria-label={props.t('inventoryDiagnostic')} readOnly value={diagnostic} onFocus={(event) => { event.currentTarget.select() }} /></label> : null}
+      {props.error ? <p role="alert">{props.t('inventoryRefreshFailed')}: {props.error}</p> : null}
+      <InventoryWarnings data={props.data} t={props.t} />
       {props.data.installed.length === 0 ? <EmptyState title={props.t('noInstalled')} body={props.t('noInstalledBody')} /> : (
-        <div className={css.itemList}>{props.data.installed.map(item => (
-          <article className={css.itemRow} key={item.id}>
-            <span className={css.itemIcon}><IconCheckOutline16 size={18} /></span>
-            <div><strong>{item.name}</strong><span>{[item.version, item.profile, formatDate(item.installedAt, resolveLanguage())].filter(Boolean).join(' · ')}</span><code>{item.workspacePath}</code></div>
-            <button type="button" onClick={() => { void copyText(item.workspacePath) }}>{props.t('copyPath')}</button>
-            <button type="button" onClick={() => { props.onOpenPath(item.workspacePath) }}><IconEditOutline16 size={15} />{props.t('editSetup')}</button>
-            <button className={css.dangerButton} type="button" disabled={!item.removable} title={item.removable ? undefined : props.t('externalUninstall')} onClick={() => { props.onUninstall(item) }}><IconTrashOutline16 size={15} />{props.t('uninstall')}</button>
+        <div className={css.itemList}>{items.length === 0 ? <p>{props.t('tryAnotherSearch')}</p> : null}{items.map(item => (
+          <article className={css.inventoryRow} key={item.id}>
+            <span className={css.itemIcon}><IconCordisPluginOutline14 size={18} /></span>
+            <div><strong>{item.name}</strong><span>{[item.version, item.profile, item.installedAt ? formatDate(item.installedAt, resolveLanguage()) : ''].filter(Boolean).join(' · ')}</span><InventoryIdentity item={item} t={props.t} /><code>{item.workspacePath || item.componentPath}</code></div>
+            <div className={css.inventoryActions}>
+              <button type="button" onClick={() => { void copyDiagnostic(item) }}>{props.t('inventoryDiagnostic')}</button>
+              <button type="button" disabled={!item.workspacePath && !item.componentPath} onClick={() => { void copyText(item.workspacePath || item.componentPath || '') }}>{props.t('copyPath')}</button>
+              <button type="button" disabled={!item.workspacePath && !item.componentPath} onClick={() => { props.onOpenPath(item.workspacePath || item.componentPath || '') }}><IconEditOutline16 size={15} />{props.t(item.origin === 'profile' ? 'openProfile' : props.embedded ? 'aiEditComponent' : 'editSetup')}</button>
+              <button className={css.dangerButton} type="button" disabled={!item.removable} title={item.removable ? undefined : uninstallHint(item, props.t)} onClick={() => { props.onUninstall(item) }}><IconTrashOutline16 size={15} />{props.t('uninstall')}</button>
+            </div>
           </article>
         ))}</div>
       )}
@@ -1598,8 +1698,36 @@ function InstalledView(props: {
   )
 }
 
+function InventoryIdentity({ item, t }: { readonly item: HubInstalledItem; readonly t: SetupHubSettingsTabProps['t'] }): ReactNode {
+  const states = {
+    'record-only': 'inventoryRecordOnly', declared: 'inventoryDeclared', present: 'inventoryPresent',
+    unresolved: 'inventoryUnresolved', missing: 'inventoryMissing', partial: 'inventoryPartial', unverified: 'inventoryUnverified',
+  } as const
+  return <>
+    <small>{t(item.origin === 'profile' ? 'inventoryOriginProfile' : 'inventoryOriginHub')}{item.inventoryState ? ` · ${t(states[item.inventoryState])}` : ''}</small>
+    {item.origin === 'profile' ? <small>{t(item.kind === 'bundle' ? 'inventoryKindBundle' : item.kind === 'plugin' ? 'inventoryKindPlugin' : 'inventoryKindDependency')} · {t('externalProfileManagement')}</small> : null}
+    {item.uninstallBlock ? <small>{uninstallHint(item, t)}</small> : null}
+  </>
+}
+
+function uninstallHint(item: HubInstalledItem, t: SetupHubSettingsTabProps['t']): string {
+  if (item.uninstallBlock === 'unsupported') return t('inventoryUnsupportedRemoval')
+  if (item.uninstallBlock === 'shared') return t('inventorySharedRemoval')
+  if (item.uninstallBlock === 'unverified') return t('inventoryMismatchAction')
+  if (item.origin === 'profile') return t('externalProfileManagement')
+  if (item.inventoryState === 'missing' || item.inventoryState === 'partial' || item.inventoryState === 'unverified') return t('inventoryMismatchAction')
+  return t('externalUninstall')
+}
+
+function InventoryWarnings({ data, t }: { readonly data: HubSnapshot; readonly t: SetupHubSettingsTabProps['t'] }): ReactNode {
+  if (!data.inventoryWarnings?.length) return null
+  return <div className={css.inventoryWarnings} role="alert"><strong>{t('inventoryWarnings')}</strong>{data.inventoryWarnings.map((warning, index) => <p key={index}>{warning.path}: {warning.message}</p>)}</div>
+}
+
 function DesktopComponentManager(props: SetupHubSettingsTabProps): ReactNode {
   const [request, setRequest] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState<string>()
   const [snapshot, setSnapshot] = useState<AsyncState<HubSnapshot>>({ status: 'loading' })
   const [action, setAction] = useState<AsyncState<string>>({ status: 'idle' })
   const [restartPending, setRestartPending] = useState(readDesktopRestartPending)
@@ -1608,10 +1736,18 @@ function DesktopComponentManager(props: SetupHubSettingsTabProps): ReactNode {
   const [componentRemoval, setComponentRemoval] = useState<ComponentRemovalSurface>({ status: 'idle' })
   useEffect(() => {
     let current = true
-    setSnapshot({ status: 'loading' })
+    setRefreshing(true)
+    setRefreshError(undefined)
+    setSnapshot(previous => previous.status === 'ready' ? previous : { status: 'loading' })
     void props.requestHub<HubSnapshot>('hub-snapshot').then(
-      (value) => { if (current) setSnapshot({ status: 'ready', data: value }) },
-      (error) => { if (current) setSnapshot({ status: 'error', message: errorMessage(error) }) },
+      (value) => { if (current) { setSnapshot({ status: 'ready', data: value }); setRefreshing(false) } },
+      (error) => {
+        if (!current) return
+        const message = errorMessage(error)
+        setRefreshing(false)
+        setRefreshError(message)
+        setSnapshot(previous => previous.status === 'ready' ? previous : { status: 'error', message })
+      },
     )
     return () => { current = false }
   }, [props.requestHub, request])
@@ -1674,7 +1810,7 @@ function DesktopComponentManager(props: SetupHubSettingsTabProps): ReactNode {
         eyebrow={props.t('componentEyebrow')}
         title={props.t('componentTitle')}
         description={props.t('componentIntro')}
-        actions={<>{restartPending ? <button className={css.restartDesktopButton} type="button" onClick={() => { void restartApplication() }}><IconRefreshOutline16 size={16} />{props.t('restartDesktop')}</button> : null}<button type="button" onClick={refresh}><IconRefreshOutline16 size={16} />{props.t('refreshComponents')}</button>{props.openHub === undefined ? null : <button type="button" onClick={props.openHub}><IconCordisPluginOutline14 size={16} />{props.t('openHub')}</button>}</>}
+        actions={<>{restartPending ? <button className={css.restartDesktopButton} type="button" onClick={() => { void restartApplication() }}><IconRefreshOutline16 size={16} />{props.t('restartDesktop')}</button> : null}<button type="button" disabled={refreshing} onClick={refresh}><IconRefreshOutline16 size={16} />{props.t(refreshing ? 'inventoryRefreshing' : 'refreshComponents')}</button>{props.openHub === undefined ? null : <button type="button" onClick={props.openHub}><IconCordisPluginOutline14 size={16} />{props.t('openHub')}</button>}</>}
       />
       <div className={css.componentSummary}>
         <article><strong>{data.installed.length}</strong><span>{props.t('installedComponents')}</span></article>
@@ -1683,15 +1819,7 @@ function DesktopComponentManager(props: SetupHubSettingsTabProps): ReactNode {
       </div>
       <section className={css.componentSection}>
         <SectionHeading title={props.t('installedComponents')} description={props.t('installedComponentsBody')} />
-        {data.installed.length === 0 ? <EmptyState title={props.t('noInstalled')} body={props.t('noInstalledBody')} /> : <div className={css.componentRows}>{data.installed.map(item => (
-          <article key={item.id}>
-            <span className={css.itemIcon}><IconCheckOutline16 size={18} /></span>
-            <div><strong>{item.name}</strong><small>{[item.version, item.profile, formatDate(item.installedAt, resolveLanguage())].filter(Boolean).join(' · ')}</small><code>{item.workspacePath}</code></div>
-            <button type="button" onClick={() => { void copyText(item.workspacePath) }}>{props.t('copyPath')}</button>
-            <button type="button" onClick={() => { openPath(item.workspacePath) }}><IconEditOutline16 size={15} />{props.t('aiEditComponent')}</button>
-            <button className={css.dangerButton} type="button" disabled={!item.removable} title={item.removable ? undefined : props.t('externalUninstall')} onClick={() => { uninstall(item) }}><IconTrashOutline16 size={15} />{props.t('uninstall')}</button>
-          </article>
-        ))}</div>}
+        <InstalledView embedded data={data} refreshing={refreshing} error={refreshError} onRefresh={refresh} onOpenPath={openPath} onUninstall={uninstall} t={props.t} />
       </section>
       <section className={css.componentSection}>
         <SectionHeading title={props.t('preparedComponents')} description={props.t('preparedComponentsBody')} />
@@ -2068,6 +2196,8 @@ function isDshmkCatalogPage(value: unknown): value is HubDshmkCatalogPage {
   if (!Array.isArray(value.items) || !value.items.every(isDshmkProject)) return false
   if (!isFiniteNumber(value.page) || !isFiniteNumber(value.pageSize) || !isFiniteNumber(value.total) || !isFiniteNumber(value.totalPages)) return false
   return typeof value.generatedAt === 'string'
+    && (value.fetchedAt === undefined || typeof value.fetchedAt === 'string' && (value.fetchedAt === '' || Number.isFinite(Date.parse(value.fetchedAt))))
+    && (value.refreshError === undefined || typeof value.refreshError === 'string')
     && (value.sourceMode === 'live' || value.sourceMode === 'cache' || value.sourceMode === 'bundled')
     && typeof value.sourceUrl === 'string'
 }

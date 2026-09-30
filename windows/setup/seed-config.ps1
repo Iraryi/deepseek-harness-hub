@@ -11,7 +11,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $app = [IO.Path]::GetFullPath($AppDirectory)
-$data = if ($Portable) { Join-Path $app 'data' } else { Join-Path $env:LOCALAPPDATA 'DeepSeekHarness' }
+$data = if (-not [string]::IsNullOrWhiteSpace($env:DEEPSEEK_HARNESS_DATA_DIR)) {
+    [IO.Path]::GetFullPath($env:DEEPSEEK_HARNESS_DATA_DIR)
+} elseif ($Portable) { Join-Path $app 'data' } else { Join-Path $env:LOCALAPPDATA 'DeepSeekHarness' }
 $configPath = Join-Path $data 'config.json'
 New-Item -ItemType Directory -Path $data -Force | Out-Null
 $created = $false
@@ -51,28 +53,27 @@ function New-DefaultConfig {
 if (Test-Path $configPath) {
     try {
         $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($null -eq $config.PSObject.Properties['Language']) {
-            $config | Add-Member -NotePropertyName Language -NotePropertyValue $Language
-        } else {
-            $config.Language = $Language
-        }
-        if ($null -eq $config.PSObject.Properties['FirstRunCompleted']) {
-            $config | Add-Member -NotePropertyName FirstRunCompleted -NotePropertyValue $false
-        } else {
-            $config.FirstRunCompleted = $false
+        if ($null -eq $config -or $config -isnot [pscustomobject]) {
+            throw 'Existing configuration must be a JSON object'
         }
     } catch {
-        $backupPath = $configPath + '.invalid-' + (Get-Date -Format 'yyyyMMddHHmmss')
-        Copy-Item -LiteralPath $configPath -Destination $backupPath -Force
-        $config = New-DefaultConfig -SelectedLanguage $Language
+        throw "Existing configuration was not changed. Repair the JSON or restore a backup before retrying: $configPath. $($_.Exception.Message)"
     }
+    [pscustomobject]@{ Config = $configPath; Created = $false; FirstRunReset = $false; Portable = [bool]$Portable } | ConvertTo-Json -Compress
+    return
 } else {
     $config = New-DefaultConfig -SelectedLanguage $Language
     $created = $true
 }
 
-$json = $config | ConvertTo-Json -Compress
-[IO.File]::WriteAllText($configPath, $json, [Text.UTF8Encoding]::new($false))
+$json = $config | ConvertTo-Json -Depth 100 -Compress
+$temporary = $configPath + '.new-' + [Guid]::NewGuid().ToString('N')
+[IO.File]::WriteAllText($temporary, $json, [Text.UTF8Encoding]::new($false))
+try {
+    [IO.File]::Move($temporary, $configPath)
+} finally {
+    if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+}
 
 [pscustomobject]@{
     Config = $configPath

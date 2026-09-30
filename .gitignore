@@ -54,3 +54,9 @@ worktrees/
 /windows/launcher/dist*/
 /windows/runtime/dist/
 /windows/setup/dist*/
+/windows/setup/test-results/
+/windows/setup/cache/
+/.tools/
+/Microsoft/
+/.tmp-*.log
+/.tmp-tree-payload.json

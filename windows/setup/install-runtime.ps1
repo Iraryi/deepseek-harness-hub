@@ -14,12 +14,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$destinationPath = [IO.Path]::GetFullPath($Destination)
+$destinationPath = [IO.Path]::GetFullPath($Destination).TrimEnd('\', '/')
 $parent = Split-Path $destinationPath -Parent
 if ([string]::IsNullOrWhiteSpace($parent) -or (Split-Path $destinationPath -Leaf) -ne 'runtime') {
     throw "Runtime destination must be an application runtime directory: $destinationPath"
 }
-New-Item -ItemType Directory -Path $parent -Force | Out-Null
 
 $input = [IO.Path]::GetFullPath($InputPath)
 if (-not (Test-Path $input)) { throw "Runtime input does not exist: $input" }
@@ -29,6 +28,73 @@ $stage = Join-Path $parent ('.runtime-staging-' + $operation)
 $backup = Join-Path $parent ('.runtime-backup-' + $operation)
 $sourceWork = Join-Path $parent ('.runtime-source-' + $operation)
 $installed = $false
+$transactionPath = Join-Path $parent '.runtime-transaction.json'
+$ownsTransaction = $false
+$script:runtimeMoveRetries = 0
+
+function Move-RuntimeDirectory([string]$Source, [string]$Target) {
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        Assert-NoLinkedAncestors $Source
+        Assert-NoLinkedAncestors $Target
+        try {
+            [IO.Directory]::Move($Source, $Target)
+            return
+        } catch {
+            $failure = $_.Exception
+            while ($null -ne $failure.InnerException) { $failure = $failure.InnerException }
+            $nativeCode = $failure.HResult -band 65535
+            if ($nativeCode -notin @(5, 32, 33) -or $clock.ElapsedMilliseconds -ge 10000 -or
+                (Test-Path -LiteralPath $Target) -or -not (Test-Path -LiteralPath $Source -PathType Container)) {
+                throw "Runtime directory switch failed (Windows error $nativeCode): '$Source' -> '$Target'. Existing files were not overwritten. $($failure.Message)"
+            }
+            $script:runtimeMoveRetries++
+            Start-Sleep -Milliseconds 500
+        }
+    }
+}
+
+function Assert-NoLinkedAncestors([string]$Path) {
+    $cursor = [IO.Path]::GetFullPath($Path)
+    while (-not [string]::IsNullOrWhiteSpace($cursor)) {
+        if (Test-Path -LiteralPath $cursor) {
+            $item = Get-Item -LiteralPath $cursor -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Runtime operation refuses linked paths: $cursor"
+            }
+        }
+        $cursor = Split-Path $cursor -Parent
+    }
+}
+
+function Assert-NoLinksInTree([string]$Path) {
+    Assert-NoLinkedAncestors $Path
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return }
+    $pending = [Collections.Generic.Stack[string]]::new()
+    $pending.Push($Path)
+    while ($pending.Count -gt 0) {
+        foreach ($child in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
+            if (($child.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Runtime operation refuses linked paths: $($child.FullName)"
+            }
+            if ($child.PSIsContainer) { $pending.Push($child.FullName) }
+        }
+    }
+}
+
+Assert-NoLinkedAncestors $destinationPath
+foreach ($userPath in @($env:DSH_HOME, $env:DEEPSEEK_HARNESS_DATA_DIR)) {
+    if ([string]::IsNullOrWhiteSpace($userPath)) { continue }
+    $resolvedUserPath = [IO.Path]::GetFullPath($userPath).TrimEnd('\', '/')
+    if ($resolvedUserPath.Equals($destinationPath, [StringComparison]::OrdinalIgnoreCase) -or
+        $resolvedUserPath.StartsWith($destinationPath.TrimEnd('\', '/') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "User data overlaps the replaceable Runtime. No Runtime files were changed: $resolvedUserPath"
+    }
+}
+if (Test-Path -LiteralPath $transactionPath) {
+    throw "An unfinished Runtime update requires recovery. Preserve the current Runtime and the backup recorded in: $transactionPath"
+}
+New-Item -ItemType Directory -Path $parent -Force | Out-Null
 
 function Get-Sha256Hex([string]$Path) {
     $stream = [IO.File]::OpenRead($Path)
@@ -59,6 +125,7 @@ function Remove-OwnedTree([string]$Path, [string[]]$AllowedPrefixes) {
         }
     }
     if (-not $allowed) { throw "Refusing to remove an unowned directory: $resolved" }
+    Assert-NoLinksInTree $resolved
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }
 
@@ -75,6 +142,7 @@ function Expand-Zip([string]$Archive, [string]$Target) {
 }
 
 function Copy-DirectoryContents([string]$Source, [string]$Target) {
+    Assert-NoLinksInTree $Source
     New-Item -ItemType Directory -Path $Target -Force | Out-Null
     Get-ChildItem -LiteralPath $Source -Force | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination $Target -Recurse -Force
@@ -236,31 +304,49 @@ try {
         )
     }
 
-    if (Test-Path $backup) { Remove-OwnedTree $backup @('.runtime-backup-') }
-    if (Test-Path $destinationPath) { Move-Item -LiteralPath $destinationPath -Destination $backup }
+    Assert-NoLinkedAncestors $destinationPath
+    if (Test-Path -LiteralPath $backup) { throw "Runtime backup already exists: $backup" }
+    $transaction = [IO.File]::Open($transactionPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    $ownsTransaction = $true
     try {
-        Move-Item -LiteralPath $payload -Destination $destinationPath
+        $record = [pscustomobject]@{ Destination = $destinationPath; Backup = $backup; Payload = $payload; Version = $runtime.Manifest.version }
+        $bytes = [Text.Encoding]::UTF8.GetBytes(($record | ConvertTo-Json -Compress))
+        $transaction.Write($bytes, 0, $bytes.Length)
+        $transaction.Flush($true)
+    } finally { $transaction.Dispose() }
+    if (Test-Path $destinationPath) { Move-RuntimeDirectory $destinationPath $backup }
+    try {
+        Move-RuntimeDirectory $payload $destinationPath
         $installed = $true
     }
     catch {
         if ((Test-Path $backup) -and -not (Test-Path $destinationPath)) {
-            Move-Item -LiteralPath $backup -Destination $destinationPath
+            Move-RuntimeDirectory $backup $destinationPath
         }
         throw
     }
 
-    if (Test-Path $backup) { Remove-OwnedTree $backup @('.runtime-backup-') }
     [pscustomobject]@{
         Mode = $Mode
         Destination = $destinationPath
         Version = $runtime.Manifest.version
         Node = $runtime.NodeVersion
+        PreviousRuntime = $(if (Test-Path -LiteralPath $backup) { $backup } else { $null })
+        MoveRetries = $script:runtimeMoveRetries
     } | ConvertTo-Json -Compress
 }
 finally {
-    if (Test-Path $stage) { Remove-OwnedTree $stage @('.runtime-staging-') }
-    if (Test-Path $sourceWork) { Remove-OwnedTree $sourceWork @('.runtime-source-') }
     if (-not $installed -and (Test-Path $backup) -and -not (Test-Path $destinationPath)) {
-        Move-Item -LiteralPath $backup -Destination $destinationPath
+        Move-RuntimeDirectory $backup $destinationPath
+    }
+    if ($ownsTransaction -and ($installed -or -not (Test-Path -LiteralPath $backup))) {
+        [IO.File]::Delete($transactionPath)
+    }
+    foreach ($temporaryTree in @($stage, $sourceWork)) {
+        try {
+            Remove-OwnedTree $temporaryTree @('.runtime-staging-', '.runtime-source-')
+        } catch {
+            Write-Warning "Temporary build files retained for inspection: $temporaryTree. $($_.Exception.Message)"
+        }
     }
 }

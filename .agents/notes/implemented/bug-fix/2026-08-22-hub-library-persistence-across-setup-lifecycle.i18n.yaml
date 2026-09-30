@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-22-hub-library-persistence-across-setup-lifecycle.md
-2026-08-22-hub-library-persistence-across-setup-lifecycle.md: b78c5e9012385e5dab0747ff2a1268319b6d1347
-2026-08-22-hub-library-persistence-across-setup-lifecycle.zh.md: 9ee973f5979c142341beb51e37086a3bba68eca2
+2026-08-22-hub-library-persistence-across-setup-lifecycle.md: 81c987d91915e1d5be9178086e3402451f0fd029
+2026-08-22-hub-library-persistence-across-setup-lifecycle.zh.md: 28f4f7f216d8bb68b6f517145035aaa599d5e6d8

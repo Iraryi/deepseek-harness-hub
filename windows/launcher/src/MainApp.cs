@@ -131,6 +131,7 @@ internal sealed class ProcessJob : IDisposable
 
 internal static class Program
 {
+    internal static bool HubPreloadClaimed;
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool SetProcessDPIAware();
 
@@ -148,8 +149,8 @@ internal static class Program
         try
         {
             SetCurrentProcessExplicitAppUserModelID(hubMode
-                ? "DeepSeek.Harness.Hub"
-                : "DeepSeek.Harness.Desktop");
+                ? (OverlayBinding.Present ? "DeepSeek.Harness.Overlay.Hub" : "DeepSeek.Harness.Hub")
+                : (OverlayBinding.Present ? "DeepSeek.Harness.Overlay.Desktop" : "DeepSeek.Harness.Desktop"));
         }
         catch
         {
@@ -159,6 +160,7 @@ internal static class Program
         AppConfig config = AppConfig.Load();
         HubConfig hubConfig = HubConfig.Load();
         string productName = hubMode ? "HUB" : "DSH";
+        bool preload = hubMode && Array.Exists(Environment.GetCommandLineArgs(), delegate(string argument) { return argument.StartsWith("--hub-preload=", StringComparison.Ordinal); });
         bool silentActivation = Array.Exists(Environment.GetCommandLineArgs(), delegate(string argument)
         {
             return string.Equals(argument, "--activate-silent", StringComparison.OrdinalIgnoreCase);
@@ -167,6 +169,7 @@ internal static class Program
         {
             return string.Equals(argument, "--reload-silent", StringComparison.OrdinalIgnoreCase);
         });
+        bool reconfigureActivation = Array.Exists(Environment.GetCommandLineArgs(), delegate(string argument) { return argument == "--reconfigure-silent"; });
         string instanceSuffix = BuildInstanceSuffix();
         string mutexName = "Local\\DeepSeekHarness." + (hubMode ? "Hub." : "Desktop.") + instanceSuffix;
         string activationEventName = mutexName + ".Activate";
@@ -180,11 +183,14 @@ internal static class Program
             false, EventResetMode.AutoReset, silentActivationEventName, out eventCreated))
         using (EventWaitHandle reloadActivationEvent = new EventWaitHandle(
             false, EventResetMode.AutoReset, reloadActivationEventName, out eventCreated))
+        using (EventWaitHandle reconfigureEvent = new EventWaitHandle(false, EventResetMode.AutoReset, mutexName + ".Reconfigure", out eventCreated))
         using (Mutex instanceMutex = new Mutex(true, mutexName, out createdNew))
         {
             if (!createdNew)
             {
-                if (reloadActivation) reloadActivationEvent.Set();
+                if (preload) return;
+                if (reconfigureActivation) reconfigureEvent.Set();
+                else if (reloadActivation) reloadActivationEvent.Set();
                 else if (silentActivation) silentActivationEvent.Set();
                 else activationEvent.Set();
                 return;
@@ -192,10 +198,11 @@ internal static class Program
 
             if (!config.FirstRunCompleted)
             {
+                if (preload) return;
                 string configApp = Path.Combine(AppPaths.ExeDir, "dsh-config.exe");
                 if (File.Exists(configApp))
                 {
-                    ProcessStartInfo startInfo = new ProcessStartInfo(configApp, "--first-run");
+                    ProcessStartInfo startInfo = new ProcessStartInfo(configApp, AppPaths.CompanionArguments("--first-run"));
                     startInfo.WorkingDirectory = AppPaths.ExeDir;
                     Process.Start(startInfo);
                 }
@@ -207,7 +214,19 @@ internal static class Program
                 return;
             }
 
-            Application.Run(new MainForm(config, hubConfig, hubMode, activationEvent, silentActivationEvent, reloadActivationEvent));
+            bool restart;
+            do
+            {
+                using (MainForm form = new MainForm(config, hubConfig, hubMode, activationEvent, silentActivationEvent, reloadActivationEvent))
+                {
+                    RegisteredWaitHandle registration = ThreadPool.RegisterWaitForSingleObject(reconfigureEvent, delegate {
+                        try { form.BeginInvoke((MethodInvoker)form.RestartForConfiguration); } catch (InvalidOperationException) { }
+                    }, null, Timeout.Infinite, false);
+                    try { Application.Run(form); restart = form.ConfigurationRestartRequested; }
+                    finally { registration.Unregister(null); }
+                }
+                if (restart) { config = AppConfig.Load(); hubConfig = HubConfig.Load(); }
+            } while (restart);
         }
     }
 
@@ -814,7 +833,7 @@ internal sealed class RestartOverlay : Control
     }
 }
 
-internal sealed class MainForm : Form
+internal sealed partial class MainForm : Form
 {
     private sealed class DshmkCatalogSnapshot
     {
@@ -986,7 +1005,9 @@ internal sealed class MainForm : Form
     private Dictionary<string, object> _dshmkCatalogCache;
     private Dictionary<string, object> _dshmkPreviousCatalogCache;
     private DateTime _dshmkCatalogCacheUntilUtc;
-    private bool _dshmkCatalogRefreshRunning;
+    private Task<Dictionary<string, object>> _dshmkCatalogRefreshTask;
+    private string _dshmkCatalogFetchedAt;
+    private string _dshmkCatalogRefreshError;
     private string _dshmkCatalogSourceMode;
     private string _dshmkCatalogSourceUrl;
     private readonly object _dshmkLiveMetadataSync = new object();
@@ -1058,10 +1079,16 @@ internal sealed class MainForm : Form
         if (!TryParseHotkey(_cfg.ToolbarHotkey, out _toolbarKey, out _toolbarMods)) { _toolbarKey = Keys.F8; _toolbarMods = Keys.None; }
         if (!TryParseHotkey(_cfg.FullscreenHotkey, out _fullscreenKey, out _fullscreenMods)) { _fullscreenKey = Keys.F11; _fullscreenMods = Keys.None; }
         if (headlessDataMode) return;
+        InitializeHubPreload();
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
         catch { Icon = SystemIcons.Application; }
         ApplyLaunchMode(_hubMode ? "window" : _cfg.LaunchMode);
         BuildUi();
+        if (_hubPreload) StartHubPreloadWindow();
+        _trafficChrome = new TrafficLightChrome(this, _cfg.Language == "zh-CN", _hubMode && _hubConfig.Theme == "dark");
+        Controls.Add(_trafficChrome);
+        UpdateWindowChrome();
+        Resize += delegate { UpdateWindowChrome(); };
         try
         {
             _serverJob = new ProcessJob();
@@ -1229,6 +1256,7 @@ internal sealed class MainForm : Form
                 MinimizeToTray();
                 return;
             }
+            if (!_exitRequested && !ConfirmConfigurationDeparture()) { e.Cancel = true; return; }
             _exitRequested = true;
             _serviceStartWaiting = false;
             ReleaseServiceStartGate();
@@ -1243,6 +1271,9 @@ internal sealed class MainForm : Form
         };
         FormClosed += delegate
         {
+            DisposeManagement();
+            DisposeHubPreload();
+            if (_revealTimer != null) { _revealTimer.Stop(); _revealTimer.Dispose(); _revealTimer = null; }
             if (_activationRegistration != null)
             {
                 _activationRegistration.Unregister(null);
@@ -1285,7 +1316,7 @@ internal sealed class MainForm : Form
                 BeginInvoke((MethodInvoker)delegate
                 {
                     if (IsDisposed || Disposing) return;
-                    Opacity = 1D;
+                    if (!_hubPreload) Opacity = 1D;
                     AppendLog("Initial window frame revealed");
                     EnsureTaskbarPresence();
                     RegisterActivationSignals();
@@ -1293,7 +1324,7 @@ internal sealed class MainForm : Form
                     SetLoadingStage("Preparing runtime", 12F);
                     BeginInvoke((MethodInvoker)BeginServerStart);
                     BeginInvoke((MethodInvoker)delegate { InitWebView(); });
-                    BeginInvoke((MethodInvoker)ForceForegroundWindow);
+                    if (!_hubPreload) BeginInvoke((MethodInvoker)ForceForegroundWindow);
                 });
             });
         };
@@ -1337,7 +1368,7 @@ internal sealed class MainForm : Form
         _trayIcon.Icon = Icon == null ? SystemIcons.Application : Icon;
         _trayIcon.Text = ProductDisplayName;
         _trayIcon.ContextMenuStrip = menu;
-        _trayIcon.Visible = true;
+        _trayIcon.Visible = !_hubPreload;
         _trayIcon.DoubleClick += delegate { RestoreFromTray(); };
     }
 
@@ -1439,6 +1470,7 @@ internal sealed class MainForm : Form
     private void RestoreFromTray()
     {
         if (_exitRequested || IsDisposed) return;
+        ClaimHubPreload();
         _trayHidePending = false;
         EnsureTaskbarPresence();
         Show();
@@ -1472,8 +1504,9 @@ internal sealed class MainForm : Form
                 {
                     BeginInvoke((MethodInvoker)delegate
                     {
+                        bool wasPreloaded = _hubPreload;
                         RestoreFromTray();
-                        if (!showNotice) return;
+                        if (!showNotice || wasPreloaded) return;
                         string message = _cfg.Language == "zh-CN"
                             ? ProductDisplayName + " 已经在运行，现有窗口已被唤醒。"
                             : ProductDisplayName + " is already running. Its existing window has been restored.";
@@ -1512,6 +1545,7 @@ internal sealed class MainForm : Form
 
     private void ForceForegroundWindow()
     {
+        if (_hubPreload) return;
         if (_exitRequested || IsDisposed || !IsHandleCreated) return;
         Show();
         EnsureTaskbarPresence();
@@ -1553,6 +1587,7 @@ internal sealed class MainForm : Form
 
     private void EnsureTaskbarPresence()
     {
+        if (_hubPreload) return;
         if (_exitRequested || IsDisposed) return;
         ShowInTaskbar = true;
         if (!IsHandleCreated) return;
@@ -1591,6 +1626,7 @@ internal sealed class MainForm : Form
 
     private void ExitApplication()
     {
+        if (!ConfirmConfigurationDeparture()) return;
         _exitRequested = true;
         Close();
     }
@@ -1599,6 +1635,7 @@ internal sealed class MainForm : Form
     {
         if (_webView == null || _webView.IsDisposed) return;
         _webView.Visible = true;
+        UpdateWindowChrome();
         if (_logPanel.Visible) _logPanel.BringToFront();
         if (_toolbarTargetVisible || _toolPanel.Top > -_toolPanel.Height) _toolPanel.BringToFront();
     }
@@ -1650,8 +1687,9 @@ internal sealed class MainForm : Form
     private void RequestToolbar(bool visible, bool immediate)
     {
         _toolbarTargetVisible = visible;
-        _toolbarTargetTop = visible ? 0 : -_toolPanel.Height;
+        _toolbarTargetTop = visible ? (UsesTrafficChrome && !_fullscreen ? 38 : 0) : -_toolPanel.Height;
         if (visible) _toolPanel.BringToFront();
+        if (_trafficChrome != null && _trafficChrome.Visible) _trafficChrome.BringToFront();
         if (immediate) _toolPanel.Top = _toolbarTargetTop;
     }
 
@@ -1667,6 +1705,7 @@ internal sealed class MainForm : Form
         }
         _toolPanel.Top += Math.Sign(distance) * step;
         if (_toolbarTargetVisible) _toolPanel.BringToFront();
+        if (_trafficChrome != null && _trafficChrome.Visible) _trafficChrome.BringToFront();
     }
 
     private void ToggleToolbarSticky()
@@ -1715,11 +1754,12 @@ internal sealed class MainForm : Form
             RequestToolbar(_forceToolbarVisible || _toolbarSticky, false);
         }
         AppendLog("Launch mode: " + mode);
+        UpdateWindowChrome();
     }
 
     private void ApplyWindowMode(Screen screen)
     {
-        FormBorderStyle = FormBorderStyle.Sizable;
+        FormBorderStyle = UsesTrafficChrome ? FormBorderStyle.None : FormBorderStyle.Sizable;
         TopMost = false;
         WindowState = FormWindowState.Normal;
         StartPosition = FormStartPosition.Manual;
@@ -2128,6 +2168,14 @@ internal sealed class MainForm : Form
             AppendLog("Web UI boot verified by structured ready status");
             SetStatus("Service running - interface ready", Color.FromArgb(34, 139, 74));
             if (_loadingOverlay != null) _loadingOverlay.Complete("Interface ready");
+            ScheduleHubPreload();
+            if (!_hubMode)
+            {
+                ApplyDesktopEnhancements();
+                try { DesktopEndpoint.Publish(_authenticatedUrl ?? _activeUrl); }
+                catch (Exception ex) { AppendLog("Desktop connection discovery: " + ex.Message); }
+            }
+            if (_hubPreload) BeginDshmkCatalogRefresh();
             CompleteHostedServiceRestart();
             return;
         }
@@ -2225,7 +2273,8 @@ internal sealed class MainForm : Form
         }
         string operation = GetString(envelope, "operation");
         if (!_hubMode && operation != "hub-snapshot" && operation != "hub-open-path"
-            && operation != "hub-uninstall" && operation != "desktop-reload" && operation != "app-reload")
+            && operation != "hub-uninstall" && operation != "desktop-reload" && operation != "app-reload"
+            && operation != "config-read" && operation != "config-save" && operation != "config-restart" && operation != "config-dirty" && operation != "config-open")
         {
             PostHubResult(requestId, false, null, "This HUB operation is available only in dsh-hub.exe.");
             return;
@@ -2233,6 +2282,31 @@ internal sealed class MainForm : Form
         Dictionary<string, object> payload = GetDictionary(envelope, "payload") ?? new Dictionary<string, object>();
         try
         {
+            if (operation == "config-open")
+            {
+                string target = GetString(payload, "target");
+                if (target != "hub" && target != "dsh") throw new InvalidOperationException("Invalid CONFIG target.");
+                if (!StartConfigApp(target == "hub")) throw new InvalidOperationException("Unable to open CONFIG.");
+                PostHubResult(requestId, true, new Dictionary<string, object>(), "");
+                return;
+            }
+            if (operation == "config-dirty")
+            {
+                _configurationDirty = GetBoolean(payload, "dirty");
+                PostHubResult(requestId, true, new Dictionary<string, object>(), "");
+                return;
+            }
+            if (operation == "config-restart")
+            {
+                if (_setupInstallRunning) throw new InvalidOperationException("A Setup is running. Retry restart after it completes.");
+                string target = GetString(payload, "target");
+                if (target != "hub" && target != "dsh") throw new InvalidOperationException("Invalid CONFIG target.");
+                if ((target == "hub") != _hubMode && !OpenSiblingApp(target == "hub" ? "dsh-hub.exe" : "dsh.exe", target.ToUpperInvariant(), "--reconfigure-silent"))
+                    throw new InvalidOperationException("CONFIG restart could not be requested.");
+                PostHubResult(requestId, true, new Dictionary<string, object> { { "requested", true } }, "");
+                if ((target == "hub") == _hubMode) BeginInvoke((MethodInvoker)RestartForConfiguration);
+                return;
+            }
             if (operation == "app-reload")
             {
                 if (_restartInProgress) throw new InvalidOperationException("Application restart is already in progress.");
@@ -2247,7 +2321,14 @@ internal sealed class MainForm : Form
                 return;
             }
             object data;
-            if (operation == "hub-snapshot") data = BuildHubSnapshot();
+            if (IsManagementOperation(operation)) data = await HandleManagementOperationAsync(operation, payload);
+            else if (operation == "config-read") data = ConfigEditor.Read(GetString(payload, "target"));
+            else if (operation == "config-save")
+            {
+                data = ConfigEditor.Save(GetString(payload, "target"), GetString(payload, "revision"), GetDictionary(payload, "values"));
+                _configurationDirty = false;
+            }
+            else if (operation == "hub-snapshot") data = await BuildHubSnapshotAsync();
             else if (operation == "dshmk-catalog") data = await QueryDshmkCatalogAsync(payload);
             else if (operation == "dshmk-detail") data = await LoadDshmkDetailAsync(GetInteger(payload, "repositoryId"));
             else if (operation == "dshmk-live-metadata") data = await QueryDshmkLiveMetadataAsync(payload);
@@ -2323,16 +2404,44 @@ internal sealed class MainForm : Form
 
     private Dictionary<string, object> BuildHubSnapshot()
     {
+        return ComposeHubSnapshot(ScanPluginInventory());
+    }
+
+    private async Task<Dictionary<string, object>> BuildHubSnapshotAsync()
+    {
+        PluginInventory inventory = await Task.Run(PreparePluginInventoryScan());
+        return ComposeHubSnapshot(inventory);
+    }
+
+    private Dictionary<string, object> ComposeHubSnapshot(PluginInventory inventory)
+    {
         EnsureHubDirectories();
         return new Dictionary<string, object>
         {
             { "account", ReadStoredGitHubAccount() },
             { "library", ScanSetupLibrary() },
             { "offline", ScanOfflineInbox() },
-            { "installed", ReadInstalledRecords() },
+            { "installed", inventory.Items },
+            { "inventoryWarnings", inventory.Warnings },
+            { "inventoryHome", AppPaths.DshHome },
             { "libraryPath", HubLibraryRoot },
             { "offlinePath", HubOfflineRoot }
         };
+    }
+
+    private PluginInventory ScanPluginInventory()
+    {
+        return PreparePluginInventoryScan()();
+    }
+
+    private Func<PluginInventory> PreparePluginInventoryScan()
+    {
+        string primary = AppPaths.DshHome;
+        string userHome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dsh");
+        string repository = FindRepo();
+        List<Dictionary<string, object>> records = ReadInstalledRecords();
+        return delegate { return PluginInventory.Scan(primary, new string[] { primary, userHome },
+            string.IsNullOrEmpty(repository) ? new string[0] : new string[] { repository }, records); };
     }
 
     private static Dictionary<string, object> ReadStoredGitHubAccount()
@@ -2571,8 +2680,6 @@ internal sealed class MainForm : Form
             try
             {
                 string mode = candidate.Value;
-                if (string.Equals(mode, "cache", StringComparison.OrdinalIgnoreCase)
-                    && HasLiveDshmkCatalogProvenance()) mode = "live";
                 localSnapshots.Add(CreateDshmkCatalogSnapshot(
                     ParseDshmkCatalog(File.ReadAllText(candidate.Key, Encoding.UTF8)), mode, candidate.Key));
             }
@@ -2586,6 +2693,8 @@ internal sealed class MainForm : Form
         {
             localSnapshots.Sort(delegate(DshmkCatalogSnapshot left, DshmkCatalogSnapshot right)
             {
+                int freshness = right.GeneratedAtUtc.CompareTo(left.GeneratedAtUtc);
+                if (freshness != 0) return freshness;
                 int installable = right.InstallableCount.CompareTo(left.InstallableCount);
                 if (installable != 0) return installable;
                 int repositories = right.RepositoryCount.CompareTo(left.RepositoryCount);
@@ -2597,27 +2706,40 @@ internal sealed class MainForm : Form
             _dshmkCatalogCacheUntilUtc = DateTime.UtcNow.AddMinutes(10);
             _dshmkCatalogSourceMode = selected.Mode;
             _dshmkCatalogSourceUrl = selected.Path;
+            _dshmkCatalogFetchedAt = selected.Mode == "cache" ? ReadDshmkCatalogFetchedAt() : "";
             AppendLog("DSHMK selected " + selected.Mode + " catalog with " + selected.RepositoryCount
                 + " repositories and " + selected.InstallableCount + " one-click candidates");
             BeginDshmkCatalogRefresh();
             return selected.Catalog;
         }
 
-        return await DownloadDshmkCatalogAsync();
+        return await RefreshDshmkCatalogAsync();
+    }
+
+    private Task<Dictionary<string, object>> RefreshDshmkCatalogAsync()
+    {
+        if (_dshmkCatalogRefreshTask == null || _dshmkCatalogRefreshTask.IsCompleted)
+            _dshmkCatalogRefreshTask = DownloadDshmkCatalogAsync();
+        return _dshmkCatalogRefreshTask;
     }
 
     private async Task<Dictionary<string, object>> DownloadDshmkCatalogAsync()
     {
+        CancellationToken cancellation = _hubPreload && _hubPreloadCancellation != null ? _hubPreloadCancellation.Token : _formLifetime.Token;
+        if (string.Equals(Environment.GetEnvironmentVariable("DEEPSEEK_HARNESS_OFFLINE"), "1", StringComparison.Ordinal))
+            throw new InvalidOperationException("DSHMK refresh is unavailable in offline mode.");
         Exception liveFailure = null;
         foreach (string url in new string[] { DshmkCatalogUrl, DshmkCatalogRawUrl })
         {
+            cancellation.ThrowIfCancellationRequested();
             try
             {
                 TimeSpan timeout = string.Equals(url, DshmkCatalogUrl, StringComparison.OrdinalIgnoreCase)
                     ? DshmkLiveCatalogTimeout
                     : DshmkAlternateCatalogTimeout;
-                string json = await DownloadCommunityTextAsync(url, MaxDshmkCatalogCharacters, timeout);
+                string json = await DownloadCommunityTextAsync(url, MaxDshmkCatalogCharacters, timeout, true, cancellation);
                 Dictionary<string, object> live = ParseDshmkCatalog(json);
+                cancellation.ThrowIfCancellationRequested();
                 if (_dshmkCatalogCache != null && DshmkCatalogCapabilitiesRegressed(_dshmkCatalogCache, live))
                     throw new InvalidOperationException("DSHMK live catalog was rejected because its repository or one-click candidate coverage regressed unexpectedly.");
                 EnsureHubDirectories();
@@ -2629,6 +2751,8 @@ internal sealed class MainForm : Form
                 _dshmkCatalogCacheUntilUtc = DateTime.UtcNow.AddMinutes(30);
                 _dshmkCatalogSourceMode = "live";
                 _dshmkCatalogSourceUrl = url;
+                _dshmkCatalogFetchedAt = DateTime.UtcNow.ToString("o");
+                _dshmkCatalogRefreshError = "";
                 return live;
             }
             catch (Exception ex)
@@ -2637,25 +2761,29 @@ internal sealed class MainForm : Form
                 AppendLog("DSHMK catalog request failed for " + url + ": " + ex.Message);
             }
         }
-        throw new InvalidOperationException("DSHMK is unavailable online and no valid local catalog snapshot exists.", liveFailure);
+        throw new InvalidOperationException("DSHMK online refresh failed; the last usable catalog is retained.", liveFailure);
     }
 
-    private static bool HasLiveDshmkCatalogProvenance()
+    private static string ReadDshmkCatalogFetchedAt()
     {
-        if (!File.Exists(HubDshmkCatalogFile) || !File.Exists(HubDshmkCatalogProvenanceFile)) return false;
+        if (!File.Exists(HubDshmkCatalogFile) || !File.Exists(HubDshmkCatalogProvenanceFile)) return "";
         try
         {
             JavaScriptSerializer serializer = new JavaScriptSerializer();
             Dictionary<string, object> provenance = serializer.DeserializeObject(
                 File.ReadAllText(HubDshmkCatalogProvenanceFile, Encoding.UTF8)) as Dictionary<string, object>;
-            if (provenance == null || !string.Equals(GetString(provenance, "sourceMode"), "live", StringComparison.OrdinalIgnoreCase)) return false;
+            if (provenance == null || !string.Equals(GetString(provenance, "sourceMode"), "live", StringComparison.OrdinalIgnoreCase)) return "";
             object catalogLengthValue;
-            if (!provenance.TryGetValue("catalogLength", out catalogLengthValue) || catalogLengthValue == null) return false;
+            if (!provenance.TryGetValue("catalogLength", out catalogLengthValue) || catalogLengthValue == null) return "";
             string catalogLength = Convert.ToString(catalogLengthValue, CultureInfo.InvariantCulture);
             string currentLength = new FileInfo(HubDshmkCatalogFile).Length.ToString(CultureInfo.InvariantCulture);
-            return string.Equals(catalogLength, currentLength, StringComparison.Ordinal);
+            DateTime fetchedAt;
+            if (!string.Equals(catalogLength, currentLength, StringComparison.Ordinal)
+                || !DateTime.TryParse(GetString(provenance, "fetchedAt"), CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out fetchedAt)) return "";
+            return fetchedAt.ToString("o");
         }
-        catch { return false; }
+        catch { return ""; }
     }
 
     private static void WriteDshmkCatalogProvenance(string sourceUrl)
@@ -2700,23 +2828,44 @@ internal sealed class MainForm : Form
     {
         DshmkCatalogSnapshot before = CreateDshmkCatalogSnapshot(baseline, "baseline", "");
         DshmkCatalogSnapshot after = CreateDshmkCatalogSnapshot(candidate, "candidate", "");
-        if (before.RepositoryCount >= 100 && after.RepositoryCount * 100 < before.RepositoryCount * 65) return true;
-        return before.InstallableCount >= 50 && after.InstallableCount * 100 < before.InstallableCount * 25;
+        if (after.GeneratedAtUtc < before.GeneratedAtUtc) return true;
+        if (before.InstallableCount >= 50 && after.InstallableCount * 100 < before.InstallableCount * 25) return true;
+        if (before.RepositoryCount < 100 || after.RepositoryCount * 100 >= before.RepositoryCount * 65) return false;
+        if (after.GeneratedAtUtc <= before.GeneratedAtUtc || after.RepositoryCount < 100) return true;
+        Dictionary<string, object> stats = GetDictionary(candidate, "stats");
+        object[] repositories = GetArray(candidate, "repositories");
+        if (stats == null || GetInteger(stats, "fetched") != after.RepositoryCount
+            || repositories == null || repositories.Length != after.RepositoryCount) return true;
+        HashSet<int> identities = new HashSet<int>();
+        foreach (object value in repositories)
+        {
+            Dictionary<string, object> repository = value as Dictionary<string, object>;
+            Uri source;
+            if (repository == null || !identities.Add(GetInteger(repository, "repositoryId"))
+                || !Uri.TryCreate(GetString(repository, "url"), UriKind.Absolute, out source)
+                || source.Scheme != Uri.UriSchemeHttps || !string.Equals(source.Host, "github.com", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
     }
 
     private async void BeginDshmkCatalogRefresh()
     {
+        if (_exitRequested || (_hubPreload && _hubPreloadCancellation.IsCancellationRequested)) return;
         if (string.Equals(Environment.GetEnvironmentVariable("DEEPSEEK_HARNESS_OFFLINE"), "1", StringComparison.Ordinal)) return;
-        if (_dshmkCatalogRefreshRunning) return;
-        _dshmkCatalogRefreshRunning = true;
+        if (_dshmkCatalogRefreshTask != null && !_dshmkCatalogRefreshTask.IsCompleted) return;
         try
         {
-            await DownloadDshmkCatalogAsync();
+            await RefreshDshmkCatalogAsync();
             AppendLog("DSHMK background refresh loaded the live catalog");
             PostDshmkCatalogUpdated();
         }
-        catch (Exception ex) { AppendLog("DSHMK background refresh retained the local snapshot: " + ex.Message); }
-        finally { _dshmkCatalogRefreshRunning = false; }
+        catch (Exception ex)
+        {
+            _dshmkCatalogRefreshError = ex.Message;
+            if (_dshmkCatalogSourceMode == "live") _dshmkCatalogSourceMode = "cache";
+            AppendLog("DSHMK background refresh retained the local snapshot: " + ex.Message);
+            PostDshmkCatalogUpdated();
+        }
     }
 
     private void PostDshmkCatalogUpdated()
@@ -2766,7 +2915,23 @@ internal sealed class MainForm : Form
 
     private async Task<Dictionary<string, object>> QueryDshmkCatalogAsync(Dictionary<string, object> payload)
     {
-        Dictionary<string, object> catalog = await LoadDshmkCatalogAsync();
+        Dictionary<string, object> catalog;
+        if (GetBoolean(payload, "refresh"))
+        {
+            try
+            {
+                catalog = await RefreshDshmkCatalogAsync();
+                PostDshmkCatalogUpdated();
+            }
+            catch (Exception ex)
+            {
+                if (_dshmkCatalogCache == null) throw;
+                catalog = _dshmkCatalogCache;
+                _dshmkCatalogRefreshError = ex.Message;
+                if (_dshmkCatalogSourceMode == "live") _dshmkCatalogSourceMode = "cache";
+            }
+        }
+        else catalog = await LoadDshmkCatalogAsync();
         int requestedPage = Math.Max(1, GetInteger(payload, "page"));
         int pageSize = NormalizeDshmkPageSize(GetInteger(payload, "pageSize"));
         string query = GetString(payload, "query").Trim();
@@ -2836,6 +3001,8 @@ internal sealed class MainForm : Form
             { "sourceMode", string.IsNullOrEmpty(_dshmkCatalogSourceMode) ? "live" : _dshmkCatalogSourceMode },
             { "sourceUrl", string.IsNullOrEmpty(_dshmkCatalogSourceUrl) ? DshmkCatalogUrl : _dshmkCatalogSourceUrl },
             { "generatedAt", GetString(catalog, "generatedAt") },
+            { "fetchedAt", _dshmkCatalogFetchedAt ?? "" },
+            { "refreshError", _dshmkCatalogRefreshError ?? "" },
             { "total", total }, { "page", page }, { "pageSize", pageSize }, { "totalPages", totalPages },
             { "categories", BuildDshmkCountList(categoryCounts) }, { "projectTypes", BuildDshmkCountList(typeCounts) },
             { "items", items.ToArray() }
@@ -4250,7 +4417,7 @@ internal sealed class MainForm : Form
         return manifest;
     }
 
-    private static async Task<string> DownloadCommunityTextAsync(string url, int maxCharacters, TimeSpan timeout)
+    private static async Task<string> DownloadCommunityTextAsync(string url, int maxCharacters, TimeSpan timeout, bool revalidate = false, CancellationToken cancellation = default(CancellationToken))
     {
         ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
         using (HttpClient client = new HttpClient())
@@ -4258,7 +4425,8 @@ internal sealed class MainForm : Form
             client.Timeout = timeout;
             client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("DeepSeekHarnessDesktop", "0.1"));
             client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            using (HttpResponseMessage response = await client.GetAsync(url))
+            if (revalidate) client.DefaultRequestHeaders.CacheControl = new CacheControlHeaderValue { NoCache = true };
+            using (HttpResponseMessage response = await client.GetAsync(url, cancellation))
             {
                 if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Request failed with HTTP " + (int)response.StatusCode + ": " + url);
                 string text = await response.Content.ReadAsStringAsync();
@@ -4574,11 +4742,19 @@ internal sealed class MainForm : Form
         if (Directory.Exists(directory)) Directory.Delete(directory, true);
     }
 
-    private static void OpenHubPath(string path)
+    private void OpenHubPath(string path)
     {
         EnsureHubDirectories();
         string resolved = Path.GetFullPath(path);
-        EnsureInsideHub(resolved);
+        try { EnsureInsideHub(resolved); }
+        catch (InvalidOperationException)
+        {
+            bool discovered = ScanPluginInventory().Items.Exists(delegate(Dictionary<string, object> item)
+            {
+                return PathsEqual(GetString(item, "componentPath"), resolved);
+            });
+            if (!discovered) throw;
+        }
         if (!File.Exists(resolved) && !Directory.Exists(resolved)) throw new FileNotFoundException("HUB path no longer exists.", resolved);
         ProcessStartInfo psi = new ProcessStartInfo();
         psi.UseShellExecute = true;
@@ -4754,12 +4930,24 @@ internal sealed class MainForm : Form
         List<Dictionary<string, object>> records = ReadInstalledRecords();
         Dictionary<string, object> record = records.Find(delegate(Dictionary<string, object> item) { return GetString(item, "id") == id; });
         if (record == null) throw new InvalidOperationException("Installed Setup record was not found.");
+        Dictionary<string, object> observed = ScanPluginInventory().Items.Find(delegate(Dictionary<string, object> item) { return GetString(item, "id") == id; });
+        if (observed == null || !GetBoolean(observed, "removable"))
+            throw new InvalidOperationException("The component inventory changed or cannot be verified. Refresh the library and inspect its Profile before removing it.");
         if (!GetBoolean(record, "removable")) throw new InvalidOperationException("This Setup must be removed through Windows Apps & features.");
         string displayName = GetString(record, "name");
         if (string.IsNullOrEmpty(displayName)) displayName = id;
         string profile = GetString(record, "profile");
         if (string.IsNullOrEmpty(profile)) profile = "web";
         string method = GetString(record, "uninstallMethod");
+        HashSet<string> ownedNames = PluginInventory.ReceiptPackages(record);
+        foreach (Dictionary<string, object> other in records)
+        {
+            string otherProfile = GetString(other, "profile");
+            if (string.IsNullOrEmpty(otherProfile)) otherProfile = "web";
+            if (ReferenceEquals(other, record) || !string.Equals(otherProfile, profile, StringComparison.OrdinalIgnoreCase)) continue;
+            if (ownedNames.Overlaps(PluginInventory.ReceiptPackages(other)))
+                throw new InvalidOperationException("Another Setup record shares this component. Inspect the shared Profile before removing it.");
+        }
         string[] verificationNames;
         bool verifyDependencies;
         PostHubProgress(requestId, "preflight", 6, "正在读取组件安装记录。", displayName);
@@ -5183,6 +5371,7 @@ internal sealed class MainForm : Form
                 throw new InvalidOperationException("The packaged Runtime resolver is missing. Reinstall or repair DeepSeek Harness.");
             if (sourceEntry)
                 arguments.Append(Quote("--import")).Append(" ").Append(Quote("tsx/esm")).Append(" ");
+            arguments.Append(OverlayBinding.ImportArguments());
             arguments.Append(Quote(bin)).Append(" ").Append(Quote("setup")).Append(" ")
                 .Append(Quote("install")).Append(" ").Append(Quote(manifestPath));
             if (trust == "github-source") arguments.Append(" ").Append(Quote("--accept-source"));
@@ -5549,6 +5738,12 @@ internal sealed class MainForm : Form
         if (_webView.CoreWebView2 == null) return;
         if (!_hubMode)
         {
+            try
+            {
+                string enhancementScript = Path.Combine(AppPaths.ExeDir, "enhancements.js");
+                if (File.Exists(enhancementScript)) _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(EnhancementSettings.Bootstrap(File.ReadAllText(enhancementScript, Encoding.UTF8)));
+            }
+            catch (Exception ex) { AppendLog("Enhancement settings not applied: " + ex.Message); }
             _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(BuildCssScript(DesktopMarketCompatibilityCss));
             _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(DesktopMarketCompatibilityMarkerScript);
             AppendLog("Registered Desktop plugin layout compatibility hooks");
@@ -5652,6 +5847,7 @@ internal sealed class MainForm : Form
 
     private void ShowRuntimeError()
     {
+        if (_hubPreload) { RetireHubPreload("WebView2 unavailable during preload"); return; }
         if (_runtimeErrorShown || _exitRequested || _shuttingDown || IsDisposed || Disposing) return;
         _runtimeErrorShown = true;
         MessageBox.Show(this,
@@ -5787,8 +5983,11 @@ internal sealed class MainForm : Form
         }
         _navigationUrl = BuildNavigationUrl(_activeUrl, _hubMode, _hubConfig, out _desktopBootId);
 
-        string repo = FindRepo();
-        string node = FindNode(repo);
+        string repo;
+        string node;
+        string overlayImports;
+        try { repo = FindRepo(); node = FindNode(repo); overlayImports = OverlayBinding.ImportArguments(); }
+        catch (Exception error) { Fail("Overlay/runtime selection: " + error.Message); return; }
         if (repo == null)
         {
             Fail("deepseek-harness project folder not found. Set RepoPath in the Config app.");
@@ -5830,6 +6029,7 @@ internal sealed class MainForm : Form
         {
             arguments.Append(Quote("--import")).Append(" ").Append(Quote("tsx/esm")).Append(" ");
         }
+        arguments.Append(overlayImports);
         arguments.Append(Quote(bin)).Append(" ").Append(Quote("web"));
         string desktopPatch = EnsureDesktopWebPatch();
         if (string.IsNullOrEmpty(desktopPatch))
@@ -6234,6 +6434,11 @@ internal sealed class MainForm : Form
 
     private void OpenConfigApp()
     {
+        StartConfigApp(_hubMode);
+    }
+
+    private bool StartConfigApp(bool hubMode)
+    {
         string path = Path.Combine(AppPaths.ExeDir, "dsh-config.exe");
         try
         {
@@ -6241,8 +6446,9 @@ internal sealed class MainForm : Form
             {
                 ProcessStartInfo psi = new ProcessStartInfo(path);
                 psi.WorkingDirectory = AppPaths.ExeDir;
-                if (_hubMode) psi.Arguments = "--hub";
-                Process.Start(psi);
+                psi.Arguments = AppPaths.CompanionArguments((hubMode ? "--hub " : "") + "--owner=" + Handle.ToInt64().ToString(CultureInfo.InvariantCulture));
+                ActivateExternalProcess(Process.Start(psi));
+                return true;
             }
             else
             {
@@ -6253,6 +6459,68 @@ internal sealed class MainForm : Form
         {
             AppendLog("Open config failed: " + ex.Message);
         }
+        return false;
+    }
+
+    private bool _configurationDirty;
+    private TrafficLightChrome _trafficChrome;
+    private bool UsesTrafficChrome { get { return _cfg != null && _hubConfig != null && (_hubMode ? _hubConfig.WindowChrome : _cfg.WindowChrome) == "traffic"; } }
+
+    private void UpdateWindowChrome()
+    {
+        if (_trafficChrome == null) return;
+        bool visible = UsesTrafficChrome && !_fullscreen;
+        if (visible)
+        {
+            Screen screen = Screen.FromControl(this);
+            Rectangle work = screen.WorkingArea;
+            MaximizedBounds = new Rectangle(work.Left - screen.Bounds.Left, work.Top - screen.Bounds.Top, work.Width, work.Height);
+        }
+        _trafficChrome.Visible = visible;
+        Padding = visible ? new Padding(0, 38, 0, 0) : Padding.Empty;
+        _trafficChrome.SetBounds(0, 0, ClientSize.Width, 38);
+        if (_toolPanel != null) RequestToolbar(_toolbarTargetVisible, true);
+        if (visible) _trafficChrome.BringToFront();
+    }
+
+    protected override void WndProc(ref Message message)
+    {
+        base.WndProc(ref message);
+        if (message.Msg != 0x84 || !UsesTrafficChrome || _fullscreen || WindowState != FormWindowState.Normal) return;
+        long packed = message.LParam.ToInt64();
+        Point point = PointToClient(new Point((short)(packed & 0xffff), (short)((packed >> 16) & 0xffff)));
+        const int edge = 6;
+        bool left = point.X < edge;
+        bool right = point.X >= ClientSize.Width - edge;
+        bool top = point.Y < edge;
+        bool bottom = point.Y >= ClientSize.Height - edge;
+        int hit = top ? (left ? 13 : right ? 14 : 12) : bottom ? (left ? 16 : right ? 17 : 15) : left ? 10 : right ? 11 : 0;
+        if (hit != 0) message.Result = new IntPtr(hit);
+    }
+    public bool ConfigurationRestartRequested { get; private set; }
+
+    public void RestartForConfiguration()
+    {
+        if (IsDisposed || _exitRequested) return;
+        if (_setupInstallRunning)
+        {
+            MessageBox.Show(this, _cfg.Language == "zh-CN" ? "Setup 正在运行，请完成后再重启。" : "A Setup is running. Retry restart after it completes.", "CONFIG");
+            return;
+        }
+        if (!ConfirmConfigurationDeparture()) return;
+        ConfigurationRestartRequested = true;
+        _exitRequested = true;
+        Close();
+    }
+
+    private bool ConfirmConfigurationDeparture()
+    {
+        if (!_configurationDirty) return true;
+        bool discard = MessageBox.Show(this,
+            _cfg.Language == "zh-CN" ? "CONFIG 有未保存的修改。放弃修改并离开？选择“否”返回编辑。" : "CONFIG has unsaved changes. Discard and leave? Choose No to return to editing.",
+            "CONFIG", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+        if (discard) _configurationDirty = false;
+        return discard;
     }
 
     private void OpenCompanionApp()
@@ -6291,7 +6559,7 @@ internal sealed class MainForm : Form
             ProcessStartInfo psi = new ProcessStartInfo(path);
             psi.WorkingDirectory = AppPaths.ExeDir;
             psi.UseShellExecute = true;
-            psi.Arguments = arguments;
+            psi.Arguments = AppPaths.CompanionArguments(arguments);
             Process process = Process.Start(psi);
             ActivateExternalProcess(process);
             AppendLog("Opened independent " + displayName + " process");
@@ -6531,6 +6799,7 @@ internal sealed class MainForm : Form
 
     private void Fail(string message)
     {
+        if (_hubPreload) { RetireHubPreload(message); return; }
         ReleaseServiceStartGate();
         SetStatus("Startup failed", Color.FromArgb(190, 60, 60));
         AppendLog(message);
@@ -6672,6 +6941,12 @@ internal sealed class MainForm : Form
 
     private string FindRepo()
     {
+        string overlayRuntime = OverlayBinding.Present ? OverlayBinding.BoundPath("RuntimeRoot", _cfg.RepoPath) : null;
+        if (overlayRuntime != null)
+        {
+            if (!HasServerEntry(overlayRuntime)) throw new InvalidOperationException("The bound Overlay runtime is missing. Repair Overlay; no other runtime was selected.");
+            return overlayRuntime;
+        }
         if (!string.IsNullOrEmpty(_cfg.RepoPath))
         {
             if (HasServerEntry(_cfg.RepoPath)) return Path.GetFullPath(_cfg.RepoPath);
@@ -6771,6 +7046,12 @@ internal sealed class MainForm : Form
 
     private string FindNode(string repo)
     {
+        string overlayNode = OverlayBinding.Present ? OverlayBinding.BoundPath("NodePath", _cfg.NodePath) : null;
+        if (overlayNode != null)
+        {
+            if (!File.Exists(overlayNode)) throw new InvalidOperationException("The bound Overlay Node executable is missing. Repair Overlay.");
+            return overlayNode;
+        }
         if (!string.IsNullOrEmpty(_cfg.NodePath))
         {
             string configured = _cfg.NodePath;

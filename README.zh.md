@@ -38,9 +38,12 @@ Windows 成品统一发布在 [Releases](https://github.com/Iraryi/deepseek-harn
 | 资产 | 适合人群 | 网络要求 |
 | --- | --- | --- |
 | **Full Setup** | 电脑小白、首次安装、网络不稳定 | 可离线安装内置 Runtime 与 WebView2 |
+| **Overlay Setup（预览）** | 为已有兼容 DSH 安装增加增强功能 | 复用明确选择的 alpha.2 Runtime；独立安装，不替换本体文件 |
 | **Lite Setup** | 希望先下载较小安装器 | 在线下载并校验 Runtime，也能导入手动下载的 Runtime ZIP |
 | **Portable ZIP** | 试用、移动硬盘、免安装场景 | 电脑需已有 WebView2 |
 | **Runtime ZIP** | 修复、离线搬运、Lite Setup 导入 | 自身不带安装向导 |
+
+Full 已包含 HUB 管理概览、可选桌面增强、内嵌 CONFIG 和主动开启的局域网手机连接，不需要另外安装 Overlay。[增强路线图](docs/hub/enhancement-manager-roadmap.zh.md) 区分已实现能力与未来的官方 Desktop 适配。手机连接目前使用可信私人局域网内的未加密 HTTP，不是公网隧道。部分已有有效安装参考的目录项目仍需修复一键安装判定，详见当前 Release 的已知问题。
 
 ## 体验原则
 
@@ -66,7 +69,7 @@ flowchart LR
   Runtime --> Profiles["Desktop profile · HUB profile"]
 ```
 
-详细说明见[架构文档](docs/architecture.md)与[桌面发行边界](docs/hub/desktop-distribution.md)。
+详细说明见[架构文档](docs/architecture.zh.md)与[桌面发行边界](docs/hub/desktop-distribution.zh.md)。
 
 ## 仓库定位
 
@@ -84,7 +87,7 @@ flowchart LR
 └─ .github/                  CI, issue forms, pull request policy, and release notes config
 ```
 
-HUB 的实现就是本仓库根项目。原生宿主、Runtime、Setup 构建器、Web UI、Setup 协议、目录适配器、测试和全部共享 DSH 包都可以直接在这里修改；准确位置见[源码地图](docs/hub/source-layout.md)。`deepseek-harness-desktop` 是独立的 Desktop 发行项目，不是 HUB 的源码仓库或发布中心。
+HUB 的实现就是本仓库根项目。原生宿主、Runtime、Setup 构建器、Web UI、Setup 协议、目录适配器、测试和全部共享 DSH 包都可以直接在这里修改；准确位置见[源码地图](docs/hub/source-layout.zh.md)。`deepseek-harness-desktop` 是独立的 Desktop 发行项目，不是 HUB 的源码仓库或发布中心。
 
 ## 从源码构建 HUB
 
@@ -96,8 +99,8 @@ npm run build:hub
 
 ## 发布一个 Setup
 
-1. 阅读 [Setup 包规范](docs/hub/setup-package-spec.md)。
-2. 从 [`examples/setup-package/manifest.json`](examples/setup-package/manifest.json) 开始。如果需要本地或 AI 辅助编辑构建，继续阅读 [Custom Setup Workspaces](docs/hub/custom-workspaces.md)，并从 [`examples/setup-workspace/manifest.json`](examples/setup-workspace/manifest.json) 开始。
+1. 阅读 [Setup 包规范](docs/hub/setup-package-spec.zh.md)。
+2. 从 [`examples/setup-package/manifest.json`](examples/setup-package/manifest.json) 开始。如果需要本地或 AI 辅助编辑构建，继续阅读 [Custom Setup Workspaces](docs/hub/custom-workspaces.zh.md)，并从 [`examples/setup-workspace/manifest.json`](examples/setup-workspace/manifest.json) 开始。
 3. 本地执行 `npm run validate`。
 4. 创建 **Setup submission** Issue 并附安装证据。
 5. 安装与卸载行为稳定后提交 PR。

@@ -10,6 +10,10 @@ using System.Windows.Forms;
 
 internal static class ConfigProgram
 {
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr window);
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool SetProcessDPIAware();
 
@@ -28,6 +32,19 @@ internal static class ConfigProgram
             if (string.Equals(arg, "--hub", StringComparison.OrdinalIgnoreCase)) hubMode = true;
         }
         ConfigForm form = new ConfigForm(firstRun, hubMode);
+        foreach (string arg in args)
+        {
+            long owner;
+            if (arg.StartsWith("--owner=", StringComparison.Ordinal) && long.TryParse(arg.Substring(8), out owner) && owner != 0)
+            {
+                form.Shown += delegate {
+                    SetWindowLongPtr(form.Handle, -8, new IntPtr(owner));
+                    form.BringToFront();
+                    form.Activate();
+                    SetForegroundWindow(form.Handle);
+                };
+            }
+        }
         Application.Run(form);
         if (form.LaunchAfterClose) form.LaunchApplicationAfterClose();
     }
@@ -544,6 +561,8 @@ internal sealed class ConfigForm : Form
     private ComboBox _comboAspectRatio;
     private ComboBox _comboResolutionPreset;
     private ComboBox _comboMode;
+    private ComboBox _comboWindowChrome;
+    private ComboBox _comboHubWindowChrome;
     private bool _updatingResolutionControls;
     private CheckBox _chkAutoHide;
     private CheckBox _chkEdgeReveal;
@@ -578,6 +597,7 @@ internal sealed class ConfigForm : Form
     private ComboBox _comboHubCloseAction;
     private CheckBox _chkHubShowTrayButton;
     private CheckBox _chkHubAllowDesktopPlugins;
+    private CheckBox _chkHubPreload;
 
     private Label _lblDataDir;
 
@@ -923,6 +943,7 @@ internal sealed class ConfigForm : Form
             case "Startup choices stored separately from the main Desktop program.": return "与主程序互不影响的 HUB 启动设置。";
             case "HUB loading and close behavior are stored separately from the main Desktop program.": return "HUB 的加载画面与关闭行为独立于主程序保存。";
             case "Allow Desktop plugins to affect HUB": return "允许主程序插件影响 HUB";
+            case "Preload HUB after DSH is ready": return "DSH 就绪后预加载 HUB";
             case "Disabled by default: HUB uses an isolated Web Profile so Desktop sidebar and UI plugins do not leak into it.": return "默认关闭：HUB 使用独立 Web Profile，主程序的侧边栏和界面插件不会混入 HUB。";
             case "Appearance": return "外观";
             case "Color theme": return "颜色主题";
@@ -1297,6 +1318,11 @@ internal sealed class ConfigForm : Form
         _comboMode.Items.Add("exclusive");
         _comboMode.SelectedIndexChanged += delegate { UpdateModeDescription(); };
         AddRow(content, _comboMode);
+        AddFieldLabel(content, _cfg.Language == "zh-CN" ? "窗口按钮样式" : "Window controls");
+        _comboWindowChrome = MakeChoiceCombo(360);
+        _comboWindowChrome.Items.Add(_cfg.Language == "zh-CN" ? "系统默认" : "System default");
+        _comboWindowChrome.Items.Add(_cfg.Language == "zh-CN" ? "红黄绿（窗口模式）" : "Traffic lights (window mode)");
+        AddRow(content, _comboWindowChrome);
 
         _lblModeDescription = MakeMutedBlock(30);
         _lblModeDescription.Margin = new Padding(0, 0, 0, 6);
@@ -1304,6 +1330,11 @@ internal sealed class ConfigForm : Form
 
         AddSeparator(content);
         AddSectionTitle(content, "Startup and window controls");
+        AddFieldLabel(content, _cfg.Language == "zh-CN" ? "窗口按钮样式" : "Window controls");
+        _comboHubWindowChrome = MakeChoiceCombo(360);
+        _comboHubWindowChrome.Items.Add(_cfg.Language == "zh-CN" ? "系统默认" : "System default");
+        _comboHubWindowChrome.Items.Add(_cfg.Language == "zh-CN" ? "红黄绿（窗口模式）" : "Traffic lights (window mode)");
+        AddRow(content, _comboHubWindowChrome);
 
         AddFieldLabel(content, "Loading screen");
         _comboLoadingStyle = MakeChoiceCombo(360);
@@ -1556,6 +1587,8 @@ internal sealed class ConfigForm : Form
         isolationHint.Text = "Disabled by default: HUB uses an isolated Web Profile so Desktop sidebar and UI plugins do not leak into it.";
         isolationHint.Margin = new Padding(0, 2, 0, 0);
         AddRow(content, isolationHint);
+        _chkHubPreload = MakeCheckBox("Preload HUB after DSH is ready");
+        AddRow(content, _chkHubPreload);
 
         AddSeparator(content);
         AddSectionTitle(content, "Catalog and details");
@@ -2054,9 +2087,11 @@ internal sealed class ConfigForm : Form
             _comboHubDetailMode.SelectedIndex = _hubCfg.DetailMode == "modal" ? 1 : (_hubCfg.DetailMode == "full" ? 2 : 0);
             _comboHubDetailContent.SelectedIndex = _hubCfg.DetailContent == "original" ? 1 : 0;
             _comboHubLoadingStyle.SelectedIndex = _hubCfg.LoadingStyle == "progress" ? 1 : (_hubCfg.LoadingStyle == "off" ? 2 : 0);
+            _comboHubWindowChrome.SelectedIndex = _hubCfg.WindowChrome == "traffic" ? 1 : 0;
             _comboHubCloseAction.SelectedIndex = _hubCfg.CloseAction == "tray" ? 0 : 1;
             _chkHubShowTrayButton.Checked = _hubCfg.ShowTrayButton;
             _chkHubAllowDesktopPlugins.Checked = _hubCfg.AllowDesktopPlugins;
+            _chkHubPreload.Checked = _hubCfg.PreloadOnDesktopStart;
             UpdateHubCloseActionUi();
             _lblDataDir.Text = AppPaths.IsPortable ? T("HUB configuration stored in portable data") : T("HUB configuration stored in user data");
             _toolTip.SetToolTip(_lblDataDir, AppPaths.HubConfigFile);
@@ -2073,6 +2108,7 @@ internal sealed class ConfigForm : Form
         _chkEdgeReveal.Checked = _cfg.ToolbarEdgeReveal;
         _chkEdgeReveal.Enabled = _chkAutoHide.Checked;
         _comboLoadingStyle.SelectedIndex = _cfg.LoadingStyle == "progress" ? 1 : (_cfg.LoadingStyle == "off" ? 2 : 0);
+        _comboWindowChrome.SelectedIndex = _cfg.WindowChrome == "traffic" ? 1 : 0;
         _comboCloseAction.SelectedIndex = _cfg.CloseAction == "exit" ? 1 : 0;
         _chkShowTrayButton.Checked = _cfg.ShowTrayButton;
         _chkFullscreenToolbar.Checked = _cfg.FullscreenShowToolbar;
@@ -2112,9 +2148,11 @@ internal sealed class ConfigForm : Form
             _hubCfg.DetailMode = _comboHubDetailMode.SelectedIndex == 1 ? "modal" : (_comboHubDetailMode.SelectedIndex == 2 ? "full" : "side");
             _hubCfg.DetailContent = _comboHubDetailContent.SelectedIndex == 1 ? "original" : "native";
             _hubCfg.LoadingStyle = _comboHubLoadingStyle.SelectedIndex == 1 ? "progress" : (_comboHubLoadingStyle.SelectedIndex == 2 ? "off" : "whales");
+            _hubCfg.WindowChrome = _comboHubWindowChrome.SelectedIndex == 1 ? "traffic" : "system";
             _hubCfg.CloseAction = _comboHubCloseAction.SelectedIndex == 0 ? "tray" : "exit";
             _hubCfg.ShowTrayButton = _chkHubShowTrayButton.Checked;
             _hubCfg.AllowDesktopPlugins = _chkHubAllowDesktopPlugins.Checked;
+            _hubCfg.PreloadOnDesktopStart = _chkHubPreload.Checked;
             return;
         }
         _cfg.ResolutionWidth = (int)_numWidth.Value;
@@ -2123,6 +2161,7 @@ internal sealed class ConfigForm : Form
         _cfg.ToolbarAutoHide = _chkAutoHide.Checked;
         _cfg.ToolbarEdgeReveal = _chkEdgeReveal.Checked;
         _cfg.LoadingStyle = _comboLoadingStyle.SelectedIndex == 1 ? "progress" : (_comboLoadingStyle.SelectedIndex == 2 ? "off" : "whales");
+        _cfg.WindowChrome = _comboWindowChrome.SelectedIndex == 1 ? "traffic" : "system";
         _cfg.CloseAction = _comboCloseAction.SelectedIndex == 1 ? "exit" : "tray";
         _cfg.ShowTrayButton = _chkShowTrayButton.Checked;
         _cfg.FullscreenShowToolbar = _chkFullscreenToolbar.Checked;

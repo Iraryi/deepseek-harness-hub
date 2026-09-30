@@ -11,6 +11,8 @@ kind: "package-reference"
 
 `dsh-client-ui-sidebar` 是 dsh Web 客户端的侧边栏外壳：用户看到品牌行、启动新会话、折叠进布局拥有的 56px 轨道，并从底部固定的席位进入 Settings；可感知滚动的区域席位承载 Workspace 与 Session 浏览器。渲染到 `sidebar.workspaces` 的 Workspace 与 Session 浏览器归 ui-workspace 所有；本包既不派生其中的行，也不持有其视图偏好。部署包可以单独替换品牌标记或名称，而无须替换 New Session 控件或轨道几何；New Session 会针对显式指定、当前或最近活跃的 Workspace 启动运行时的页面局部前端 Session Intent。折叠到布局拥有的 56px 轨道仍属于本地呈现行为。
 
+本地构建版本标记使用低对比度的主题颜色。品牌文字和图案不能被选取或原生拖拽。启动时的被动聚焦不绘制品牌轮廓；显式键盘导航启用主题化的焦点提示，指针输入在不转移焦点的情况下关闭提示。此策略仅限品牌区域，不禁用会话选择或键盘激活操作。
+
 ## 目录
 
 - [使用本包](#use-this-package)

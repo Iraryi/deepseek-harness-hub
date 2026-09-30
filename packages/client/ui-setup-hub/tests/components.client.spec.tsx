@@ -98,6 +98,118 @@ afterEach(() => {
 })
 
 describe('SetupHubSettingsTab', () => {
+  it('filters settings inventory and retains its search on refresh failure', async () => {
+    let rejectScan: (error: Error) => void = () => {}
+    let calls = 0
+    const requestHub = vi.fn(() => {
+      if (++calls > 1) return new Promise((_resolve, reject) => { rejectScan = reject })
+      return Promise.resolve({ ...emptySnapshot, installed: [
+        { id: 'external', name: 'External plugin', kind: 'plugin', profile: 'web', homePath: 'D:\\external', origin: 'profile', inventoryState: 'present', packageNames: [], workspacePath: '', installedAt: '', removable: false },
+        { id: 'owned', name: 'Owned plugin', kind: 'plugin', profile: 'web', origin: 'hub', inventoryState: 'missing', packageNames: [], workspacePath: '', installedAt: '', removable: false },
+      ] })
+    }) as unknown as SetupHubSettingsTabProps['requestHub']
+    render(<SetupHubSettingsTab {...runtimeProps} desktopAvailable list={async () => ({ schemaVersion: 1, generatedAt: '', source: '', entries: [] })} install={async () => 'ok'} requestHub={requestHub} openConfig={() => {}} leaveHub={() => {}} t={t} />)
+    await screen.findByText('External plugin')
+    const sourceButton = screen.getByRole('button', { name: new RegExp(zh.inventorySourceFilter) })
+    expect(screen.queryByRole('option')).toBeNull()
+    fireEvent.click(sourceButton)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(document.activeElement).toBe(sourceButton)
+    expect(screen.queryByRole('option')).toBeNull()
+    fireEvent.click(sourceButton)
+    fireEvent.click(screen.getByRole('option', { name: zh.inventoryOriginProfile }))
+    expect(document.activeElement).toBe(sourceButton)
+    expect(screen.queryByText('Owned plugin')).toBeNull()
+    fireEvent.change(screen.getByRole('textbox', { name: zh.inventorySearch }), { target: { value: 'External' } })
+    fireEvent.click(screen.getByRole('button', { name: zh.refreshComponents }))
+    expect((screen.getByRole('button', { name: zh.inventoryRefreshing }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => { rejectScan(new Error('read failed')) })
+    expect(screen.getByRole('alert').textContent).toContain('read failed')
+    expect(screen.getByText('External plugin')).toBeTruthy()
+    expect(screen.queryByText('Owned plugin')).toBeNull()
+    expect((screen.getByRole('textbox', { name: zh.inventorySearch }) as HTMLInputElement).value).toBe('External')
+    fireEvent.click(screen.getByRole('button', { name: zh.inventoryReset }))
+    expect(screen.getByText('Owned plugin')).toBeTruthy()
+  })
+
+  it.each([true, false])('copies diagnostic metadata with a selectable fallback (clipboard=%s)', async (clipboardAvailable) => {
+    const writeText = vi.fn(async () => { if (!clipboardAvailable) throw new Error('Clipboard blocked') })
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const requestHub = hubRequest({ 'hub-snapshot': { ...emptySnapshot, installed: [{ id: 'external', name: 'External plugin', kind: 'plugin', origin: 'profile', inventoryState: 'present', componentPath: 'D:\\isolated\\package.json', packageNames: ['demo'], workspacePath: '', installedAt: '', removable: false }] } })
+    render(<SetupHubSettingsTab {...runtimeProps} desktopAvailable list={async () => ({ schemaVersion: 1, generatedAt: '', source: '', entries: [] })} install={async () => 'ok'} requestHub={requestHub} openConfig={() => {}} leaveHub={() => {}} t={t} />)
+    await screen.findByText('External plugin')
+    fireEvent.click(screen.getByRole('button', { name: zh.inventoryDiagnostic }))
+    if (clipboardAvailable) expect(await screen.findByRole('status')).toHaveProperty('textContent', zh.inventoryDiagnosticCopied)
+    else expect((await screen.findByRole('textbox', { name: zh.inventoryDiagnostic }) as HTMLTextAreaElement).value).toContain('not-verified')
+    expect(writeText.mock.calls[0]).toBeDefined()
+    expect(requestHub).toHaveBeenCalledTimes(1)
+  })
+  it('keeps inventory and search visible during failed rescans and reconciles a later removal', async () => {
+    let rejectScan: (error: Error) => void = () => {}
+    let calls = 0
+    const requestHub = vi.fn((operation: string) => {
+      if (operation !== 'hub-snapshot') return Promise.resolve({})
+      calls++
+      if (calls === 2) return new Promise((_resolve, reject) => { rejectScan = reject })
+      return Promise.resolve({ ...emptySnapshot, installed: calls > 2 ? [] : [{ id: 'external', name: 'External plugin', version: '1', kind: 'plugin', profile: 'web', origin: 'profile', inventoryState: 'present', packageNames: ['external-plugin'], workspacePath: '', installedAt: '', removable: false }] })
+    }) as unknown as SetupHubSettingsTabProps['requestHub']
+    render(<SetupHubDesktopSurface {...runtimeProps} desktopAvailable list={async () => ({ schemaVersion: 1, generatedAt: '', source: '', entries: [] })} install={async () => 'ok'} requestHub={requestHub} openConfig={() => {}} leaveHub={() => {}} t={t} />)
+    await screen.findByRole('heading', { name: zh.homeTitle })
+    fireEvent.click(within(screen.getByRole('complementary', { name: zh.functionArea })).getByRole('button', { name: new RegExp(zh.navInstalled) }))
+    fireEvent.change(screen.getByRole('textbox', { name: zh.inventorySearch }), { target: { value: 'External' } })
+    fireEvent.click(screen.getByRole('button', { name: zh.inventoryRefresh }))
+    expect((await screen.findByRole('button', { name: zh.inventoryRefreshing }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('External plugin')).toBeTruthy()
+    await act(async () => { rejectScan(new Error('profile unavailable')) })
+    expect((screen.getByRole('textbox', { name: zh.inventorySearch }) as HTMLInputElement).value).toBe('External')
+    expect(screen.getByRole('alert').textContent).toContain('profile unavailable')
+    expect(screen.getByText('External plugin')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh.inventoryRefresh }))
+    await waitFor(() => { expect(screen.queryByText('External plugin')).toBeNull() })
+    expect((screen.getByRole('textbox', { name: zh.inventorySearch }) as HTMLInputElement).value).toBe('External')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+  it('shows external profile components and scan failures without inventing Setup editing or uninstall support', async () => {
+    const componentPath = 'D:\\isolated\\profiles\\web\\package.json'
+    const requestHub = hubRequest({ 'hub-snapshot': {
+      ...emptySnapshot,
+      installed: [{ id: 'external', name: 'External plugin', version: '1.2.0', kind: 'plugin', profile: 'web', origin: 'profile', inventoryState: 'present', componentPath, packageNames: ['external-plugin'], workspacePath: '', installedAt: '', removable: false }],
+      inventoryWarnings: [{ path: 'D:\\isolated\\profiles\\broken\\package.json', message: 'Invalid JSON' }],
+    } })
+    render(<SetupHubSettingsTab {...runtimeProps} desktopAvailable list={async () => ({ schemaVersion: 1, generatedAt: '', source: 'https://example.com', entries: [] })} install={async () => 'ok'} requestHub={requestHub} openConfig={() => {}} leaveHub={() => {}} t={t} />)
+    expect(await screen.findByText('External plugin')).toBeTruthy()
+    expect(within(screen.getByText('External plugin').closest('article')!).getByText(new RegExp(zh.inventoryOriginProfile))).toBeTruthy()
+    expect(screen.getByText(new RegExp(zh.inventoryPresent))).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('Invalid JSON')
+    expect((screen.getByRole('button', { name: zh.uninstall }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: zh.openProfile }))
+    await waitFor(() => { expect(requestHub).toHaveBeenCalledWith('hub-open-path', { path: componentPath }) })
+  })
+  it('forces online refresh without hiding the catalog and preserves it after a failure', async () => {
+    let failRefresh: (error: Error) => void = () => {}
+    const requestHub = vi.fn((operation: string, payload?: Readonly<Record<string, unknown>>) => {
+      if (operation === 'dshmk-catalog' && payload?.refresh === true) {
+        return new Promise((_resolve, reject) => { failRefresh = reject })
+      }
+      return hubRequest()(operation as never, payload)
+    }) as unknown as SetupHubSettingsTabProps['requestHub']
+    render(<SetupHubDesktopSurface {...runtimeProps} desktopAvailable list={async () => ({ schemaVersion: 1, generatedAt: '', source: 'https://example.com', entries: [] })} install={async () => 'ok'} requestHub={requestHub} openConfig={() => {}} leaveHub={() => {}} t={t} />)
+    await screen.findByRole('heading', { name: zh.homeTitle })
+    fireEvent.click(screen.getByRole('button', { name: zh.navGitHub }))
+    await screen.findByText(dshmkProject.name)
+    fireEvent.click(screen.getByRole('button', { name: zh.retry }))
+    await screen.findByText(zh.catalogRefreshing)
+    expect(requestHub).toHaveBeenCalledWith('dshmk-catalog', expect.objectContaining({ refresh: true, page: 1 }))
+    expect(screen.getByText(dshmkProject.name)).toBeTruthy()
+    await act(async () => { failRefresh(new Error('network unavailable')) })
+    expect(await screen.findByText('network unavailable')).toBeTruthy()
+    expect(screen.getByText(zh.catalogCachedNotice)).toBeTruthy()
+    expect(screen.getByText(zh.catalogDiagnostics).closest('details')?.open).toBe(false)
+    expect(screen.getAllByRole('button', { name: zh.retry })).toHaveLength(1)
+    expect(screen.getByText(dshmkProject.name)).toBeTruthy()
+    fireEvent.change(screen.getByRole('textbox', { name: zh.dshmkSearchPlaceholder }), { target: { value: 'test' } })
+    await waitFor(() => { expect(requestHub).toHaveBeenCalledWith('dshmk-catalog', expect.objectContaining({ query: 'test', refresh: false })) })
+  })
   it('manages installed and prepared components instead of opening another market', async () => {
     const openHub = vi.fn()
     const list: SetupHubSettingsTabProps['list'] = vi.fn(async () => ({ schemaVersion: 1 as const, generatedAt: '2026-08-15T00:00:00.000Z', source: 'https://example.com', entries: [{ manifest, metrics: {} }] }))
@@ -157,6 +269,7 @@ describe('SetupHubSettingsTab', () => {
     const openConfig = vi.fn()
     const leaveHub = vi.fn()
     const requestHub = hubRequest({
+      'config-read': { target: 'hub', revision: 'test', values: { Theme: 'system', WindowChrome: 'system' } },
       'community-registry': communityRegistry,
       'dshmk-live-metadata': {
         '101': {
@@ -196,10 +309,14 @@ describe('SetupHubSettingsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: zh.navCatalog }))
     await screen.findByRole('heading', { name: zh.catalogTitle })
     expect(screen.getAllByText('Hub Test')).toHaveLength(2)
-    fireEvent.click(screen.getByRole('button', { name: zh.openConfig }))
+    fireEvent.click(within(screen.getByRole('complementary', { name: zh.functionArea })).getByRole('button', { name: zh.openConfig }))
+    await screen.findByRole('heading', { name: zh.configTitle })
+    await waitFor(() => { expect(screen.getByRole('button', { name: zh.configStandalone }).hasAttribute('disabled')).toBe(false) })
+    fireEvent.click(screen.getByRole('button', { name: zh.configStandalone }))
+    await waitFor(() => { expect(requestHub).toHaveBeenCalledWith('config-open', { target: 'hub' }) })
+    expect(openConfig).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: zh.returnToDesktop }))
-    expect(openConfig).toHaveBeenCalledOnce()
-    expect(leaveHub).toHaveBeenCalledOnce()
+    await waitFor(() => { expect(leaveHub).toHaveBeenCalledOnce() })
   })
 
   it('uses a neutral plugin glyph when a curated entry has no GitHub owner icon', async () => {

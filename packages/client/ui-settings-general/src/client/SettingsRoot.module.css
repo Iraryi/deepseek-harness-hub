@@ -225,6 +225,11 @@
   overflow-y: auto;
 }
 
+.options:has([data-config-editor]) {
+  padding: 0;
+  overflow: hidden;
+}
+
 /* Visually-hidden text seat (close button accessible name from slot content). */
 .hiddenLabel {
   position: absolute;

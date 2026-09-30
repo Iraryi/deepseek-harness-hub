@@ -215,6 +215,7 @@ english.UninstallConfirmYes=Yes
 english.UninstallConfirmNo=No
 english.UninstallLaunchFailed=The existing uninstaller could not be started.
 english.CheckDataPreserved=Both standard user data and portable application data are preserved during update and repair.
+english.DataModeChangeBlocked=Existing data uses a different storage mode. Keep that mode for this upgrade; changing storage requires a separately verified migration. No user data has been moved or deleted.
 english.CheckBlockedMessage=Setup cannot continue until the computer check passes. Correct the item marked ACTION and retry.
 english.ReadyRecommended=Installation method:
 english.ReadyRecommendedValue=Recommended automatic installation
@@ -349,6 +350,7 @@ chinesesimp.UninstallConfirmYes=是
 chinesesimp.UninstallConfirmNo=否
 chinesesimp.UninstallLaunchFailed=无法启动已有的卸载程序。
 chinesesimp.CheckDataPreserved=更新和修复都会保留标准用户数据与程序目录下的便携数据。
+chinesesimp.DataModeChangeBlocked=已有数据使用另一种存储模式。此次升级请保持原模式；更改存储位置需要单独校验迁移。用户数据未被移动或删除。
 chinesesimp.CheckBlockedMessage=电脑检查通过后才能继续。请处理标有“需要处理”的项目，再重新检查。
 chinesesimp.ReadyRecommended=安装方式：
 chinesesimp.ReadyRecommendedValue=推荐的全自动安装
@@ -376,6 +378,12 @@ Source: "{#LauncherDir}\Microsoft.Web.WebView2.Core.dll"; DestDir: "{app}"; Flag
 Source: "{#LauncherDir}\Microsoft.Web.WebView2.WinForms.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherDir}\WebView2Loader.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherDir}\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LauncherDir}\community-registry.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LauncherDir}\dshmk-catalog.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LauncherDir}\enhancements.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LauncherDir}\mobile\relay.mjs"; DestDir: "{app}\mobile"; Flags: ignoreversion
+Source: "{#LauncherDir}\mobile\pair.mjs"; DestDir: "{app}\mobile"; Flags: ignoreversion
+Source: "{#LauncherDir}\mobile\pair.html"; DestDir: "{app}\mobile"; Flags: ignoreversion
 Source: "install-runtime.ps1"; Flags: dontcopy noencryption
 Source: "seed-config.ps1"; Flags: dontcopy noencryption
 Source: "stop-installed-processes.ps1"; Flags: dontcopy noencryption
@@ -620,7 +628,9 @@ end;
 
 function SelectedDataDirectory: String;
 begin
-  if DataModeKey = 'portable' then
+  if Trim(GetEnv('DEEPSEEK_HARNESS_DATA_DIR')) <> '' then
+    Result := GetEnv('DEEPSEEK_HARNESS_DATA_DIR')
+  else if DataModeKey = 'portable' then
     Result := ExpandConstant('{app}\data')
   else
     Result := ExpandConstant('{localappdata}\DeepSeekHarness');
@@ -734,7 +744,7 @@ begin
   end;
   SetEnvironmentVariable('Path', ProcessPath);
 
-  DshHome := ExpandConstant('{localappdata}\DeepSeekHarness\dsh');
+  DshHome := AddBackslash(SelectedDataDirectory) + 'dsh';
   if not UserEnvironmentValueExists('DSH_HOME', ExistingDshHome) or (Trim(ExistingDshHome) = '') then begin
     RegWriteExpandStringValue(HKCU, 'Environment', 'DSH_HOME', DshHome);
     SetEnvironmentVariable('DSH_HOME', DshHome);
@@ -762,7 +772,9 @@ begin
   SetEnvironmentVariable('Path', ProcessPath);
   OwnedDshHome := ExpandConstant('{localappdata}\DeepSeekHarness\dsh');
   if UserEnvironmentValueExists('DSH_HOME', ExistingDshHome) and
-    (CompareText(NormalizePath(ExistingDshHome), NormalizePath(OwnedDshHome)) = 0) then begin
+    ((CompareText(NormalizePath(ExistingDshHome), NormalizePath(OwnedDshHome)) = 0) or
+     (DeleteUserDataRequested and
+      (CompareText(NormalizePath(ExistingDshHome), NormalizePath(ExpandConstant('{app}\data\dsh'))) = 0))) then begin
     RegDeleteValue(HKCU, 'Environment', 'DSH_HOME');
     SetEnvironmentVariable('DSH_HOME', '');
   end;
@@ -1603,12 +1615,6 @@ var
   Language: String;
   Arguments: String;
 begin
-  if (InstallOperation <> 'fresh') and
-    FileExists(SelectedDataDirectory + '\config.json') then begin
-    Log('Existing configuration preserved during ' + InstallOperation + '.');
-    Result := True;
-    Exit;
-  end;
   if ActiveLanguage = 'chinesesimp' then Language := 'zh-CN' else Language := 'en-US';
   Arguments := '-Language ' + PowerShellLiteral(Language) +
     ' -AppDirectory ' + PowerShellLiteral(ExpandConstant('{app}'));
@@ -1621,6 +1627,14 @@ begin
   Result := '';
   NeedsRestart := False;
   if PreparationComplete then Exit;
+  if Trim(GetEnv('DEEPSEEK_HARNESS_DATA_DIR')) = '' then begin
+    if (ExistingPortableData and (DataModeKey <> 'portable')) or
+      ((not ExistingPortableData) and (DataModeKey = 'portable') and
+       FileExists(ExpandConstant('{localappdata}\DeepSeekHarness\config.json'))) then begin
+      Result := CustomMessage('DataModeChangeBlocked');
+      Exit;
+    end;
+  end;
   RunComputerChecks;
   if not CheckPassed then begin
     Result := CustomMessage('CheckBlockedMessage');
@@ -1643,7 +1657,13 @@ begin
       end;
     end;
 
-    SetPreparationStage(3, 5, 'PrepareRuntimeStep');
+    SetPreparationStage(3, 5, 'PrepareConfigStep');
+    if not SeedFirstRunConfig then begin
+      Result := TaskFailureMessage(CustomMessage('ConfigSeedFailed'));
+      Exit;
+    end;
+
+    SetPreparationStage(4, 5, 'PrepareRuntimeStep');
     if not InstallSelectedRuntime then begin
       Result := TaskFailureMessage(CustomMessage('RuntimeInstallFailed'));
       Exit;
@@ -1663,11 +1683,6 @@ begin
         DeleteFile(SelectedDataDirectory + '\.dsh-portable-data');
     end;
 
-    SetPreparationStage(4, 5, 'PrepareConfigStep');
-    if not SeedFirstRunConfig then begin
-      Result := TaskFailureMessage(CustomMessage('ConfigSeedFailed'));
-      Exit;
-    end;
     SetPreparationStage(5, 5, 'PrepareFinishStep');
     if not FileExists(ExpandConstant('{app}\runtime\runtime-manifest.json')) then begin
       LastTaskLogPath := '';

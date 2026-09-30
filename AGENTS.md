@@ -4,6 +4,8 @@ DeepSeek Harness is a plugin-based agent harness on vendored Cordis: **everythin
 
 ## Mandatory Desktop / Setup / HUB product requirements
 
+- At the next user interaction, first remind the user of the deferred one-click Setup eligibility bug (TokenLedger) recorded at the top of `HUB_EXECUTION_STATE.md`; do not silently consider it fixed by this release.
+
 Desktop, CONFIG, Setup, HUB, catalog, and Web UI work must read [HUB_REQUIREMENTS.md](HUB_REQUIREMENTS.md), then update [HUB_EXECUTION_STATE.md](HUB_EXECUTION_STATE.md). Both survive compaction and handoff; only explicit user instructions override them. Never rely on memory.
 
 ## Pre-release stance: foundation over blast radius

@@ -74,6 +74,8 @@ A registered component receives inputs assembled at its binding site. Components
 
 Components never receive `ctx`. Parent-owned point-in-time values enter through the owner argument to `renderSlot`; shared view state uses a declared store; services and model objects stay in the `apply` closure and are projected into callbacks or observable sources.
 
+Settings sections receive the shell-owned `close` callback and optional `registerLeaveGuard(guard)` callback. The guard resolves to permission to leave and returns a disposer when registered. This owner-prop mechanism lets a section protect a local draft without importing another feature's component or installing global navigation events.
+
 ## Framework-provided hooks
 
 The shipped adapters add these standard props. They are available according to the target slot's scope, independent of which package registered the component.

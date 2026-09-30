@@ -13,6 +13,8 @@ import {
   SetupHubDesktopSurface, SetupHubSettingsTab, type SetupHubInjected,
 } from './SetupHubSettingsTab.tsx'
 import { en, zh, type SetupHubLocaleKey } from './locales.ts'
+import { HubSidebarAction } from './HubSidebarAction.tsx'
+import { ConfigSettingsSection } from './ConfigEditor.tsx'
 
 export type {
   SetupHubDesktopSurfaceProps, SetupHubInjected, SetupHubSettingsTabInjected,
@@ -37,6 +39,12 @@ export const inject = ['slots', 'locale']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-setup-hub: dictionaries')
   const t = ctx.locale.bind(NS)
+  const openHub = (): void => {
+    if (sendSetupDesktopCommand('open-hub')) return
+    const url = new URL(window.location.href)
+    url.searchParams.set('dshSurface', 'hub')
+    window.location.assign(url)
+  }
   const injected = (): SetupHubInjected => ({
     desktopAvailable: setupBridgeAvailable(),
     list: async () => {
@@ -47,7 +55,7 @@ export function apply(ctx: ClientContext): void {
     install: installThroughDesktop,
     requestHub: requestHubThroughDesktop,
     openConfig: () => { sendSetupDesktopCommand('open-config') },
-    openHub: () => { sendSetupDesktopCommand('open-hub') },
+    openHub,
     leaveHub: () => {
       if (sendSetupDesktopCommand('open-main')) return
       const url = new URL(window.location.href)
@@ -59,6 +67,16 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.plugins.tab', id: 'hub', order: 5,
     label: () => t('tab'), locale: NS, inject: injected,
   }, SetupHubSettingsTab))
+
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'desktop-config', order: 15,
+    label: () => 'CONFIG', locale: NS, inject: injected,
+  }, ConfigSettingsSection))
+
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action', id: 'dsh-hub-market', order: -100,
+    locale: NS, inject: () => ({ openHub }),
+  }, HubSidebarAction))
 
   if (new URLSearchParams(window.location.search).get('dshSurface') === 'hub') {
     ctx.slots.inject('shell.overlay', () => ctx.slots.register({

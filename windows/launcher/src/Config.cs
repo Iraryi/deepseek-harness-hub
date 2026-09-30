@@ -22,6 +22,29 @@ internal static class AppPaths
     }
 
     public static string CommandLineDataDir { get { return GetCommandLineOption("--dsh-data-dir"); } }
+    public static string CompanionArguments(string prefix)
+    {
+        string arguments = prefix + " --dsh-data-dir " + QuoteArgument(DataDir) + " --dsh-home " + QuoteArgument(DshHome);
+        string scope = CommandLineInstanceScope;
+        if (string.IsNullOrEmpty(scope)) scope = Environment.GetEnvironmentVariable("DEEPSEEK_HARNESS_INSTANCE_SCOPE");
+        if (!string.IsNullOrEmpty(scope)) arguments += " --dsh-instance-scope " + QuoteArgument(scope);
+        return arguments;
+    }
+
+    private static string QuoteArgument(string value)
+    {
+        StringBuilder result = new StringBuilder("\"");
+        int slashes = 0;
+        foreach (char character in value)
+        {
+            if (character == '\\') { slashes++; continue; }
+            result.Append('\\', character == '"' ? slashes * 2 + 1 : slashes);
+            result.Append(character);
+            slashes = 0;
+        }
+        result.Append('\\', slashes * 2);
+        return result.Append('"').ToString();
+    }
     public static string CommandLineDshHome { get { return GetCommandLineOption("--dsh-home"); } }
     public static string CommandLineInstanceScope { get { return GetCommandLineOption("--dsh-instance-scope"); } }
 
@@ -60,7 +83,9 @@ internal static class AppPaths
         get
         {
             string commandLineDirectory = CommandLineDataDir;
-            if (!string.IsNullOrWhiteSpace(commandLineDirectory)) return Path.GetFullPath(commandLineDirectory);
+            if (!string.IsNullOrWhiteSpace(commandLineDirectory)) return Path.GetFullPath(OverlayBinding.BoundPath("StateRoot", commandLineDirectory));
+            string overlayDirectory = OverlayBinding.Value("StateRoot");
+            if (overlayDirectory != null) return overlayDirectory;
             string overrideDirectory = Environment.GetEnvironmentVariable("DEEPSEEK_HARNESS_DATA_DIR");
             if (!string.IsNullOrWhiteSpace(overrideDirectory))
             {
@@ -99,7 +124,9 @@ internal static class AppPaths
         get
         {
             string commandLineHome = CommandLineDshHome;
-            if (!string.IsNullOrWhiteSpace(commandLineHome)) return Path.GetFullPath(commandLineHome);
+            if (!string.IsNullOrWhiteSpace(commandLineHome)) return Path.GetFullPath(OverlayBinding.BoundPath("DshHome", commandLineHome));
+            string overlayHome = OverlayBinding.Value("DshHome");
+            if (overlayHome != null) return overlayHome;
             string configured = Environment.GetEnvironmentVariable("DSH_HOME");
             if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured);
             return Path.Combine(DataDir, "dsh");
@@ -117,6 +144,8 @@ internal static class AppPaths
 
 internal sealed class HubConfig
 {
+    public bool PreloadOnDesktopStart { get; set; }
+    public string WindowChrome { get; set; }
     public string Theme { get; set; }
     public string StartPage { get; set; }
     public string DiscoverySource { get; set; }
@@ -131,6 +160,8 @@ internal sealed class HubConfig
 
     public HubConfig()
     {
+        PreloadOnDesktopStart = true;
+        WindowChrome = "system";
         Theme = "system";
         StartPage = "home";
         DiscoverySource = "dshmk";
@@ -183,6 +214,7 @@ internal sealed class HubConfig
 
 internal sealed class AppConfig
 {
+    public string WindowChrome { get; set; }
     public int ResolutionWidth { get; set; }
     public int ResolutionHeight { get; set; }
     public string Language { get; set; }
@@ -210,6 +242,7 @@ internal sealed class AppConfig
 
     public AppConfig()
     {
+        WindowChrome = "system";
         ResolutionWidth = 1280;
         ResolutionHeight = 800;
         Language = CultureInfo.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "zh-CN" : "en-US";

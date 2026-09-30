@@ -26,6 +26,16 @@ function declarations(selector: string): Map<string, string> | undefined {
 }
 
 describe('SidebarRoot.module.css', () => {
+  it('limits startup selection prevention to branding and keeps explicit keyboard focus visible', () => {
+    expect(declarations('.brand:focus')?.get('outline')).toBe('none')
+    expect(declarations('.brand[data-keyboard-navigation]:focus-visible')?.get('outline')).toBe(
+      '2px solid var(--dsw-alias-state-business-primary)',
+    )
+    expect(declarations('.brand *')?.get('user-select')).toBe('none')
+    expect(declarations('.brand *')?.get('-webkit-user-drag')).toBe('none')
+    expect(declarations('.root')?.has('user-select')).toBe(false)
+  })
+
   it('shares and cancels the wide shell trailing padding structurally', () => {
     const root = declarations('.root')
     expect(root?.get('--dsh-sidebar-inline-padding')).toBe('12px')

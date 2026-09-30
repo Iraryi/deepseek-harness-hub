@@ -85,6 +85,41 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
 }
 
 describe('SidebarRoot shell', () => {
+  it('distinguishes passive startup focus from keyboard navigation without stealing focus', () => {
+    const shell = mountShell()
+    const brand = screen.getAllByRole('button', { name: 'New session' })[0]!
+    brand.focus()
+    expect(document.activeElement).toBe(brand)
+    expect(brand.hasAttribute('data-keyboard-navigation')).toBe(false)
+    fireEvent.keyDown(document, { key: 'Tab', ctrlKey: true })
+    expect(brand.hasAttribute('data-keyboard-navigation')).toBe(false)
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(brand.getAttribute('data-keyboard-navigation')).toBe('true')
+    fireEvent.pointerDown(document.body)
+    expect(brand.hasAttribute('data-keyboard-navigation')).toBe(false)
+    expect(document.activeElement).toBe(brand)
+    fireEvent.keyDown(brand, { key: 'Enter' })
+    expect(brand.getAttribute('data-keyboard-navigation')).toBe('true')
+    fireEvent.click(brand)
+    expect(shell.startSession).toHaveBeenCalledOnce()
+  })
+
+  it('prevents native brand artwork dragging but leaves other content alone', () => {
+    mountShell()
+    const mark = screen.getByTestId('custom-brand-mark')
+    expect(fireEvent.dragStart(mark)).toBe(false)
+    expect(fireEvent.dragStart(screen.getByTestId('region'))).toBe(true)
+  })
+
+  it('removes input modality listeners when the sidebar unmounts', () => {
+    const remove = vi.spyOn(document, 'removeEventListener')
+    mountShell()
+    cleanup()
+    expect(remove).toHaveBeenCalledWith('keydown', expect.any(Function), true)
+    expect(remove).toHaveBeenCalledWith('pointerdown', expect.any(Function), true)
+    remove.mockRestore()
+  })
+
   it('routes New Session (capsule + wordmark) and the column toggle', () => {
     const b = mountShell()
     expect(screen.getByTestId('custom-brand-mark')).toBeTruthy()

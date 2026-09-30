@@ -30,7 +30,9 @@ function declare(slots: SlotRegistry): () => void {
     name: 'root',
     children: {
       'settings.plugins.tab': { kind: 'list', scope: 'root' },
+      'settings.section': { kind: 'list', scope: 'root' },
       'shell.overlay': { kind: 'list', scope: 'root' },
+      'sidebar.footer.action': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
 }
@@ -54,6 +56,9 @@ describe('ui-setup-hub browser plugin', () => {
     expect(entry.locale).toBe(NS)
     expect(resolveSlotLabel(entry.options.label)).toBe('HUB')
     expect(b.slots.entries('shell.overlay')).toHaveLength(0)
+    const market = b.slots.entries('sidebar.footer.action')[0]!
+    expect(market.options.id).toBe('dsh-hub-market')
+    expect(market.locale).toBe(NS)
     expect(fetchMock).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => SetupHubSettingsTabInjected)()
@@ -95,6 +100,8 @@ describe('ui-setup-hub browser plugin', () => {
 
     stop()
     expect(b.slots.entries('settings.plugins.tab')).toHaveLength(0)
+    expect(b.slots.entries('sidebar.footer.action')).toHaveLength(0)
+    expect(b.slots.entries('settings.section')).toHaveLength(0)
     declare(b.slots)
     await vi.waitFor(() => {
       expect(b.slots.entries('settings.plugins.tab')[0]?.component).toBe(SetupHubSettingsTab)
@@ -102,6 +109,7 @@ describe('ui-setup-hub browser plugin', () => {
 
     await fiber.dispose()
     expect(b.slots.entries('settings.plugins.tab')).toHaveLength(0)
+    expect(b.slots.entries('sidebar.footer.action')).toHaveLength(0)
     expect(() => b.locale.register(NS, 'zh', {})).not.toThrow()
     await b.ctx.fiber.dispose()
   })

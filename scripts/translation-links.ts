@@ -69,16 +69,22 @@ export function languageSwitcherLinkOffset(
   if (tree.type !== 'root') return undefined
   const accepted = new Set(typeof acceptedTargets === 'string' ? [acceptedTargets] : acceptedTargets)
   const headingIndex = tree.children.findIndex(node => node.type === 'heading' && node.depth === 1)
-  if (headingIndex < 0) return undefined
-  for (const node of tree.children.slice(headingIndex + 1)) {
+  const htmlHeadingIndex = tree.children.findIndex(node => node.type === 'html' && /^<h1\b[^>]*>[\s\S]*<\/h1>\s*$/i.test(node.value))
+  const titleIndex = headingIndex < 0 ? htmlHeadingIndex : headingIndex
+  if (titleIndex < 0) return undefined
+  for (const node of tree.children.slice(titleIndex + 1)) {
     if (node.type === 'heading') return undefined
     if (node.type !== 'paragraph' || node.position === undefined) continue
     const start = node.position.start.offset
     const end = node.position.end.offset
     if (start === undefined || end === undefined) continue
     const authored = markdown.slice(start, end)
-    if (!/^(?:English \| \[中文\]\([^\n]+\)|\[English\]\([^\n]+\) \| 中文)$/.test(authored)) continue
     const links = node.children.filter((child): child is Extract<Nodes, { type: 'link' }> => child.type === 'link')
+    if (headingIndex < 0) {
+      const switchers = links.filter(link => accepted.has(link.url) && link.children.length === 1 && link.children[0]?.type === 'text' && /^(?:English|中文|简体中文)$/.test(link.children[0].value))
+      if (switchers.length === 1) return switchers[0]?.position?.start.offset
+    }
+    if (!/^(?:English \| \[中文\]\([^\n]+\)|\[English\]\([^\n]+\) \| 中文)$/.test(authored)) continue
     if (links.length === 1 && accepted.has(links[0]?.url ?? '')) {
       return links[0]?.position?.start.offset
     }

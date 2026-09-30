@@ -5,12 +5,23 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  hasLanguageSwitcher,
   normalizeTranslationMarkdownLinks,
   rewriteTranslationLinkLocales,
   translationLinkLocaleViolations,
   type TranslationLinkContext,
 } from './translation-links.ts'
 import { removeFixtureSafely } from './test-fixture-cleanup.ts'
+import { parseMarkdown } from './markdown.ts'
+
+it('recognizes a single language link in an HTML landing-page navigation row', () => {
+  const markdown = '<h1 align="center">HUB</h1>\n\n<div align="center">\n\n[简体中文](README.zh.md) · [Downloads](https://example.com)\n\n</div>\n'
+  expect(hasLanguageSwitcher(parseMarkdown(markdown), markdown, 'README.zh.md')).toBe(true)
+  const duplicate = markdown.replace(' · [Downloads]', ' · [中文](README.zh.md) · [Downloads]')
+  expect(hasLanguageSwitcher(parseMarkdown(duplicate), duplicate, 'README.zh.md')).toBe(false)
+  const bodyOnly = '# HUB\n\n## Body\n\n[中文](README.zh.md)\n'
+  expect(hasLanguageSwitcher(parseMarkdown(bodyOnly), bodyOnly, 'README.zh.md')).toBe(false)
+})
 
 const roots: string[] = []
 

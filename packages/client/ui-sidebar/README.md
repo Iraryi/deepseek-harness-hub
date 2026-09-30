@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 `dsh-client-ui-sidebar` is the sidebar shell of the dsh web client: users see the brand row, start new sessions, collapse into the layout-owned 56px rail, and reach Settings from the bottom-pinned seat, while the scroll-aware region seat hosts the Workspace and Session browser. The Workspace and Session browser rendered into `sidebar.workspaces` belongs to ui-workspace; this package neither derives its rows nor owns its view preferences. A deployment package can replace the brand mark or name without replacing the New Session control or the rail geometry, and New Session starts the runtime's page-local frontend Session Intent against the explicit, current, or most recently active Workspace. Collapse into the layout-owned 56px rail remains presentation-local.
 
+The local-build version badge uses subdued theme colors. Brand text and artwork are not selectable or natively draggable. Passive startup focus does not draw a brand outline; explicit keyboard navigation enables its themed focus indicator, and pointer input dismisses it without moving focus. This policy is local to branding and does not disable conversation selection or keyboard activation.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

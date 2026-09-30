@@ -74,6 +74,8 @@ Slot 声明固定两个相互独立的维度。
 
 组件绝不会收到 `ctx`。父组件在某次渲染时已经知道的值通过 `renderSlot` 的 owner 参数进入；共享视图状态使用声明的 store；service 与 model object 留在 `apply` closure 中，只向组件投影 callback 或 observable source。
 
+设置分区接收外壳拥有的 `close` 回调及可选的 `registerLeaveGuard(guard)` 回调。守卫异步返回是否允许离开，注册时返回清理函数。此 owner-prop 机制让分区保护局部草稿，而不导入其他功能的组件或安装全局导航事件。
+
 ## 框架提供的 hooks
 
 当前组合中的 adapter 会添加以下标准 props。它们按目标 slot 的 scope 提供，与注册组件来自哪个包无关。
